@@ -1,4 +1,5 @@
-using System.ComponentModel.DataAnnotations;
+using System;
+using BaGetter.Core.Configuration;
 
 namespace BaGetter.Core;
 
@@ -6,7 +7,7 @@ public class BaGetterOptions
 {
     /// <summary>
     /// The API Key required to authenticate package
-    /// operations. If empty, package operations do not require authentication.
+    /// operations. If <see cref="ApiKeys"/> and  <see cref="ApiKey"/> are not set, package operations do not require authentication.
     /// </summary>
     public string ApiKey { get; set; }
 
@@ -43,6 +44,22 @@ public class BaGetterOptions
     /// </summary>
     public string Urls { get; set; }
 
+    /// <summary>
+    /// The maximum package size in GB.
+    /// Attempted uploads of packages larger than this will be rejected with an internal server error carrying one <see cref="System.IO.InvalidDataException"/>.
+    /// </summary>
+    public uint MaxPackageSizeGiB { get; set; } = 8;
+
+    /// <summary>
+    /// If this is set to a value, it will limit the number of versions that can be pushed for a package.
+    /// the older versions will be deleted.
+    /// This setting is not used anymore and is deprecated.
+    /// </summary>
+    [Obsolete("MaxVersionsPerPackage is deprecated. Please configure RetentionOptions parameters instead.")]
+    public uint? MaxVersionsPerPackage { get; set; } = null;
+
+    public RetentionOptions Retention { get; set; }
+
     public DatabaseOptions Database { get; set; }
 
     public StorageOptions Storage { get; set; }
@@ -52,4 +69,8 @@ public class BaGetterOptions
     public MirrorOptions Mirror { get; set; }
 
     public HealthCheckOptions HealthCheck { get; set; }
+
+    public StatisticsOptions Statistics { get; set; }
+
+    public NugetAuthenticationOptions Authentication { get; set; }
 }

@@ -1,3 +1,6 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # Configuration
 
 You can modify BaGetter's configurations by editing the `appsettings.json` file.
@@ -14,10 +17,43 @@ To do so, you can insert the desired API key in the `ApiKey` field.
 }
 ```
 
+You can also use the `ApiKeys` array in order to manage multiple API keys for multiple teams/developers.
+
+```json
+{
+    "Authentication": {
+        "ApiKeys": [
+            {
+                "Key" : "NUGET-SERVER-API-KEY-1"
+            },
+            {
+                "Key" : "NUGET-SERVER-API-KEY-2"
+            }
+        ]
+        ...
+    }
+    ...
+}
+```
+
+Both `ApiKey` and `ApiKeys` work in conjunction additively eg.: `or` `||` logical operator.
+
 Users will now have to provide the API key to push packages:
 
 ```shell
 dotnet nuget push -s http://localhost:5000/v3/index.json -k NUGET-SERVER-API-KEY package.1.0.0.nupkg
+```
+
+## Hosting on a different path
+
+By default, BaGetter is hosted at the root path `/` (e.g. `bagetter.your-company.org`). You can host BaGetter at a different path (e.g. `bagetter.your-company.org/bagetter`) by setting the `PathBase` field:
+
+```json
+{
+    ...
+    "PathBase": "/bagetter",
+    ...
+}
 ```
 
 ## Enable read-through caching
@@ -30,18 +66,90 @@ caching to:
 
 The following `Mirror` setting configures BaGetter to index packages from [nuget.org](https://nuget.org):
 
-```json
-{
-    ...
+<Tabs>
+  <TabItem value="None" label="No Authentication" default>
+    ```json
+    {
+        ...
 
-    "Mirror": {
-        "Enabled":  true,
-        "PackageSource": "https://api.nuget.org/v3/index.json"
-    },
+        "Mirror": {
+            "Enabled":  true,
+            "PackageSource": "https://api.nuget.org/v3/index.json"
+        },
 
-    ...
-}
-```
+        ...
+    }
+    ```
+  </TabItem>
+
+  <TabItem value="Basic" label="Basic Authentication">
+    For basic authentication, set `Type` to `Basic` and provide a `Username` and `Password`:
+
+    ```json
+    {
+        ...
+
+        "Mirror": {
+            "Enabled":  true,
+            "PackageSource": "https://api.nuget.org/v3/index.json",
+            "Authentication": {
+                "Type": "Basic",
+                "Username": "username",
+                "Password": "password"
+            }
+        },
+
+        ...
+    }
+    ```
+  </TabItem>
+
+  <TabItem value="Bearer" label="Bearer Token">
+    For bearer authentication, set `Type` to `Bearer` and provide a `Token`:
+
+    ```json
+    {
+        ...
+
+        "Mirror": {
+            "Enabled":  true,
+            "PackageSource": "https://api.nuget.org/v3/index.json",
+            "Authentication": {
+                "Type": "Bearer",
+                "Token": "your-token"
+            }
+        },
+
+        ...
+    }
+    ```
+  </TabItem>
+
+  <TabItem value="Custom" label="Custom Authentication">
+    With the custom authentication type, you can provide any key-value pairs which will be set as headers in the request:
+
+    ```json
+    {
+        ...
+
+        "Mirror": {
+            "Enabled":  true,
+            "PackageSource": "https://api.nuget.org/v3/index.json",
+            "Authentication": {
+                "Type": "Custom",
+                "CustomHeaders": {
+                    "My-Auth": "your-value",
+                    "Other-Header": "value"
+                }
+            }
+        },
+
+        ...
+    }
+    ```
+  </TabItem>
+</Tabs>
+
 
 :::info
 
@@ -63,6 +171,31 @@ downloaded if you know the package's id and version. You can override this behav
 
     "PackageDeletionBehavior": "HardDelete",
 
+    ...
+}
+```
+
+## Package auto-deletion
+
+If your build server generates many nuget packages, your BaGetter server can quickly run out of space. Bagetter leverages [SemVer 2](https://semver.org/) and has logic to keep a history of packages based on the version numbering such as `<major>.<minor>.<patch>-<prerelease tag>.<prerelease build number>`.
+
+There is an optional config section for `Retention` and the following parameters can be enabled to limit history for each level of the version. If none of these are set, there are no cleaning rules enforced. Each parameter is optional, e.g. if you specify only a `MaxPatchVersions`, the package limit will only enforced within each major and minor version combination.
+Packages deleted are always the oldest based on version numbers.
+
+- MaxMajorVersions: Maximum number of major versions for each package
+- MaxMinorVersions: Maximum number of minor versions for each major version
+- MaxPatchVersions: Maximum number of patch versions for each major + minor version
+- MaxPrereleaseVersions: Maximum number of prerelease builds for each major + minor + patch version and prerelease type. If you have `beta` and `alpha` this will keep `MaxPrereleaseVersions` versions for both `beta` and `alpha`.
+
+```json
+{
+    ...
+    "Retention": {
+        "MaxMajorVersions": 5,
+        "MaxMinorVersions": 5,
+        "MaxPatchVersions": 5,
+        "MaxPrereleaseVersions": 5,
+    }
     ...
 }
 ```
@@ -99,11 +232,54 @@ Pushing a package with a pre-release version like "3.1.0-SNAPSHOT" will overwrit
 
 A private feed requires users to authenticate before accessing packages.
 
-:::warning
+You can require that users provide a username and password to access the nuget feed.
+To do so, you can insert the credentials in the `Authentication` section.
 
-Private feeds are not supported at this time! See [this pull request](https://github.com/loic-sharma/BaGet/pull/69) for more information.
+```json
+{
+    "Authentication": {
+        "Credentials": [
+            {
+                "Username": "username",
+                "Password": "password"
+            }
+        ]
+        ...
+    }
+    ...
+}
+```
 
-:::
+Users will now have to provide the username and password to fetch and download packages.
+
+How to add private nuget feed:
+
+1. Download the latest NuGet executable.
+2. Open a Command Prompt and change the path to the nuget.exe location.
+3. The command from the example below stores a token in the %AppData%\NuGet\NuGet.config file. Your original credentials cannot be obtained from this token.
+
+
+```shell
+NuGet Sources Add -Name "localhost" -Source "http://localhost:5000/v3/index.json" -UserName "username" -Password "password"
+```
+
+If you are unable to connect to the feed by using encrypted credentials, store your credentials in clear text:
+
+```shell
+NuGet Sources Add -Name "localhost" -Source "http://localhost:5000/v3/index.json" -UserName "username" -Password "password" -StorePasswordInClearText
+```
+
+If you have already stored a token instead of storing the credentials as clear text, update the definition in the %AppData%\NuGet\NuGet.config file by using the following command:
+
+```shell
+NuGet Sources Update -Name "localhost" -Source "http://localhost:5000/v3/index.json" -UserName "username" -Password "password" -StorePasswordInClearText
+```
+
+The commands are slightly different when using the Package Manager console in Visual Studio:
+
+```shell
+dotnet nuget add source "http://localhost:5000/v3/index.json" --name "bagetter" --username "username" --password "password"
+```
 
 ## Database configuration
 
@@ -172,21 +348,68 @@ If not specified, the `MaxRequestBodySize` in BaGetter defaults to 250MB (262144
 
 ## Health Endpoint
 
-When running within a containerized environment like Kubernetes, a basic health endpoint is exposed at `/health` that returns 200 OK and the text "Healthy" when running.
+A health endpoint is exposed at `/health` that returns 200 OK or 503 Service Unavailable and always includes a json object listing the current status of the application:
 
-This path is configurable if needed:
+```json
+{
+  "Status": "Healthy",
+  "Sqlite": "Healthy",
+  ...
+}
+```
+
+The services can be omitted by setting the `Statistics:ListConfiguredServices` to false, in which case only the `Status` property is returned in the json object.
+
+This path and the name of the "Status" property are configurable if needed:
 
 ```json
 {
     ...
 
     "HealthCheck": {
-        "Path": "/healthz"
+        "Path": "/healthz",
+        "StatusPropertyName": "Status"
     },
 
     ...
 }
 ```
+
+## Maximum package size
+
+The max package size default to 8GiB and can be configured using the `MaxPackageSizeGiB` setting. The NuGet gallery currently has a 250MB limit, which is enough for most packages.
+This can be useful if you are hosting a private feed and need to host large packages that include chocolatey installers, machine learning models, etc.
+
+```json
+{
+    ...
+
+    "MaxPackageSizeGiB": 8,
+
+    ...
+}
+```
+
+## Statistics
+
+On the application's statistics page the currently used services and overall package and version counts are listed.
+You can hide or show this page by modifying the `EnableStatisticsPage` configuration.  
+If you set `ListConfiguredServices` to `false` the currently used services for database and storage (such as `Sqlite`) are omitted on the stats page:
+
+```json
+{
+    ...
+
+    "Statistics": {
+        "EnableStatisticsPage": true,
+        "ListConfiguredServices": false
+    },
+
+    ...
+}
+```
+
+
 
 ## Load secrets from files
 
@@ -201,8 +424,6 @@ This allows for sensitive values to be provided individually to the application,
 ### Docker Compose example
 
 ```yaml
-version: '2'
-
 services:
   bagetter:
     image: bagetter/bagetter:latest
@@ -210,6 +431,8 @@ services:
       # Single file mounted for API key
       - ./secrets/api-key.txt:/run/secrets/ApiKey:ro
       - ./data:/srv/baget
+    ports:
+      - "5000:8080"
     environment:
       - Database__ConnectionString=Data Source=/srv/baget/bagetter.db
       - Database__Type=Sqlite
@@ -217,6 +440,12 @@ services:
       - Storage__Type=FileSystem
       - Storage__Path=/srv/baget/packages
 ```
+
+The specified file `./secrets/api-key.txt` contains the clear text api key only.
+
+The port mapping will make available the service at `http://localhost:5000`. (To make it available using `https` you should use an additional reverse proxy service, like "apache" or "nginx".)
+
+Instead of targeting the `latest` version you may also refer to tags for major, minor and fixed releases, e.g. `1`, `1.4` or `1.4.8`.
 
 Aditional documentation for secrets:
 

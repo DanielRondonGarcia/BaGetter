@@ -1,7 +1,11 @@
 using System;
 using System.Text.Json.Serialization;
+using BaGetter.Authentication;
 using BaGetter.Core;
 using BaGetter.Web;
+using BaGetter.Web.Authentication;
+using BaGetter.Web.Helper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BaGetter;
@@ -26,7 +30,9 @@ public static class IServiceCollectionExtensions
         services.AddHttpContextAccessor();
         services.AddTransient<IUrlGenerator, BaGetterUrlGenerator>();
 
-        services.AddBaGetterApplication(configureAction);
+        services.AddSingleton(ApplicationVersionHelper.GetVersion());
+
+        var app = services.AddBaGetterApplication(configureAction);
 
         return services;
     }

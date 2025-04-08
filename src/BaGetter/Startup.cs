@@ -1,30 +1,37 @@
 using System;
+using BaGetter.Authentication;
 using BaGetter.Core;
+using BaGetter.Core.Extensions;
+using BaGetter.Tencent;
 using BaGetter.Web;
+using BaGetter.Web.Authentication;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.OAuth;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using HealthCheckOptions = Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions;
 
 namespace BaGetter;
 
 public class Startup
 {
+    private IConfiguration Configuration { get; }
+
     public Startup(IConfiguration configuration)
     {
         Configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
     }
 
-    private IConfiguration Configuration { get; }
-
     public void ConfigureServices(IServiceCollection services)
     {
-        services.ConfigureOptions<ConfigureBaGetterOptions>();
+        services.ConfigureOptions<ValidateBaGetterOptions>();
+        services.ConfigureOptions<ConfigureBaGetterServer>();
 
         services.AddBaGetterOptions<IISServerOptions>(nameof(IISServerOptions));
         services.AddBaGetterWebApplication(ConfigureBaGetterApplication);
@@ -47,8 +54,12 @@ public class Startup
 
     private void ConfigureBaGetterApplication(BaGetterApplication app)
     {
+        //Add base authentication and authorization
+        app.AddNugetBasicHttpAuthentication();
+        app.AddNugetBasicHttpAuthorization();
+
         // Add database providers.
-        //app.AddAzureTableDatabase();
+        app.AddAzureTableDatabase();
         app.AddMySqlDatabase();
         app.AddPostgreSqlDatabase();
         app.AddSqliteDatabase();
@@ -58,8 +69,9 @@ public class Startup
         app.AddFileStorage();
         app.AddAliyunOssStorage();
         app.AddAwsS3Storage();
-        //app.AddAzureBlobStorage();
+        app.AddAzureBlobStorage();
         app.AddGoogleCloudStorage();
+        app.AddTencentOssStorage();
 
         // Add search providers.
         //app.AddAzureSearch();
@@ -80,9 +92,12 @@ public class Startup
         app.UsePathBase(options.PathBase);
 
         app.UseStaticFiles();
+        app.UseAuthentication();
         app.UseRouting();
+        app.UseAuthorization();
 
-        app.UseCors(ConfigureBaGetterOptions.CorsPolicy);
+        app.UseCors(ConfigureBaGetterServer.CorsPolicy);
+
         app.UseOperationCancelledMiddleware();
 
         app.UseEndpoints(endpoints =>
@@ -92,6 +107,16 @@ public class Startup
             baget.MapEndpoints(endpoints);
         });
 
-        app.UseHealthChecks(options.HealthCheck.Path);
+        app.UseHealthChecks(options.HealthCheck.Path,
+            new HealthCheckOptions
+            {
+                ResponseWriter = async (context, report) =>
+                {
+                    await report.FormatAsJson(context.Response.Body, options.Statistics.ListConfiguredServices, options.HealthCheck.StatusPropertyName,
+                        context.RequestAborted);
+                },
+                Predicate = check => check.IsConfigured(options)
+            }
+        );
     }
 }
