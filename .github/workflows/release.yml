@@ -61,7 +61,7 @@ jobs:
       - name: Generate changelog with git-cliff
         uses: tj-actions/git-cliff@v1.4.2
         with:
-          args: --latest --strip all
+          args: --latest --strip all --limit 50
           output: "CHANGELOG.md"
       - name: Create release with ncipollo/release-action
         uses: ncipollo/release-action@v1.14.0
@@ -70,6 +70,7 @@ jobs:
           artifacts: "bagetter-${{ needs.version.outputs.RELEASE_VERSION }}.zip"
           name: ${{ needs.version.outputs.RELEASE_VERSION }}
           prerelease: ${{ contains(github.ref_name, '-') }}
+          allowUpdates: true
 
   release_packages:
     if: ${{ github.ref_type == 'tag' }}
