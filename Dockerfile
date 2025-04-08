@@ -47,7 +47,7 @@ ENV Storage__Path "/data"
 ENV Search__Type "Database"
 ENV Database__Type "Sqlite"
 ENV Database__ConnectionString "Data Source=/data/db/bagetter.db"
-LABEL org.opencontainers.image.source="https://github.com/bagetter/BaGetter"
+LABEL org.opencontainers.image.source="https://github.com/bagetterT/BaGetter"
 # copy default folders
 COPY --from=publish /data /data
 # copy the published app

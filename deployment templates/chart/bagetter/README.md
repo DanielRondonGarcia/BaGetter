@@ -4,7 +4,7 @@
 
 A Helm chart for BaGetter nuget package server
 
-**Homepage:** <https://github.com/bagetter/BaGetter/tree/master/charts/BaGetter>
+**Homepage:** <https://github.com/DanielRondonGarcia/BaGetter/tree/master/deployment%20templates/chart/bagetter>
 
 ## Source Code
 

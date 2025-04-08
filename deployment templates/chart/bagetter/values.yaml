@@ -33,7 +33,7 @@ controllers:
       bagetter:
         image:
           # -- image repository
-          repository: bagetter/bagetter
+          repository: ghcr.io/danielrondongarcia/bagetter
           # -- image tag
           tag: latest
           # -- image pull policy

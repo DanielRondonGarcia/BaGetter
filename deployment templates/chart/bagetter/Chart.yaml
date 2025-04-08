@@ -19,12 +19,12 @@ keywords:
   - baget
   - bagetter
 
-home: https://github.com/bagetter/BaGetter/tree/master/charts/BaGetter
+home: https://github.com/DanielRondonGarcia/BaGetter/tree/master/deployment%20templates/chart/bagetter
 # icon: 
 
 sources:
-  - https://github.com/bagetter/BaGetter
-  - https://hub.docker.com/r/bagetter/bagetter
+  - https://github.com/DanielRondonGarcia/BaGetter
+  - https://github.com/DanielRondonGarcia/BaGetter/pkgs/container/bagetter
 
 dependencies:
   - name: common
