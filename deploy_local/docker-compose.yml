@@ -1,0 +1,14 @@
+services:
+  nuget-server:
+    image: ghcr.io/danielrondongarcia/bagetter:latest
+    container_name: nuget-server
+    ports:
+      - "5000:8080"
+    env_file:
+      - .env
+    volumes:
+      - baget-data:/var/baget
+    restart: always
+
+volumes:
+  baget-data:
