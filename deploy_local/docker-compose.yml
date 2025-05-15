@@ -8,7 +8,9 @@ services:
       - .env
     volumes:
       - baget-data:/var/baget
+      - dataprotection-keys:/root/.aspnet/DataProtection-Keys
     restart: always
 
 volumes:
   baget-data:
+  dataprotection-keys:
