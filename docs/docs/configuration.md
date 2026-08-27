@@ -185,7 +185,7 @@ Packages deleted are always the oldest based on version numbers.
 - MaxMajorVersions: Maximum number of major versions for each package
 - MaxMinorVersions: Maximum number of minor versions for each major version
 - MaxPatchVersions: Maximum number of patch versions for each major + minor version
-- MaxPrereleaseVersions: Maximum number of prerelease builds for each major + minor + patch version and prerelease type. If you have `beta` and `alpha` this will keep `MaxPrereleaseVersions` versions for both `beta` and `alpha`.
+- MaxPrereleaseVersions: Maximum number of prerelease builds for each major + minor + patch version and prerelease type. If you have `beta` and `alpha` this will keep `MaxPrereleaseVersions` versions for both `beta` and `alpha`. Suffixes incompatible with [SemVer 2](https://semver.org/) will be treated as a separate type.
 
 ```json
 {
@@ -295,6 +295,12 @@ Each database engine requires a connection string to configure the connection. P
 
 You may configure the chosen database engine either using environment variables or by editing the `appsettings.json` file.
 
+:::info
+
+Database migrations are automatically applied on application startup.
+
+:::
+
 ### Environment Variables
 
 There are two environment variables related to database configuration. These are:
@@ -393,7 +399,7 @@ This can be useful if you are hosting a private feed and need to host large pack
 ## Statistics
 
 On the application's statistics page the currently used services and overall package and version counts are listed.
-You can hide or show this page by modifying the `EnableStatisticsPage` configuration.  
+You can hide or show this page by modifying the `EnableStatisticsPage` configuration.
 If you set `ListConfiguredServices` to `false` the currently used services for database and storage (such as `Sqlite`) are omitted on the stats page:
 
 ```json

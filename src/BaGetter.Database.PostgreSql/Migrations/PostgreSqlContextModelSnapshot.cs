@@ -6,6 +6,8 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
+#nullable disable
+
 namespace BaGetter.Database.PostgreSql.Migrations
 {
     [DbContext(typeof(PostgreSqlContext))]
@@ -15,25 +17,31 @@ namespace BaGetter.Database.PostgreSql.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("Npgsql:PostgresExtension:citext", ",,")
-                .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn)
-                .HasAnnotation("ProductVersion", "3.1.18")
+                .HasAnnotation("ProductVersion", "9.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
+
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "citext");
+            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("BaGetter.Core.Package", b =>
                 {
                     b.Property<int>("Key")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Key"));
 
                     b.Property<string>("Authors")
-                        .HasColumnType("character varying(4000)")
-                        .HasMaxLength(4000);
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("CachedFrom")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<string>("Description")
-                        .HasColumnType("character varying(4000)")
-                        .HasMaxLength(4000);
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<long>("Downloads")
                         .HasColumnType("bigint");
@@ -45,61 +53,61 @@ namespace BaGetter.Database.PostgreSql.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<string>("IconUrl")
-                        .HasColumnType("character varying(4000)")
-                        .HasMaxLength(4000);
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<string>("Id")
                         .IsRequired()
-                        .HasColumnType("citext")
-                        .HasMaxLength(128);
+                        .HasMaxLength(128)
+                        .HasColumnType("citext");
 
                     b.Property<bool>("IsPrerelease")
                         .HasColumnType("boolean");
 
                     b.Property<string>("Language")
-                        .HasColumnType("character varying(20)")
-                        .HasMaxLength(20);
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("LicenseUrl")
-                        .HasColumnType("character varying(4000)")
-                        .HasMaxLength(4000);
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<bool>("Listed")
                         .HasColumnType("boolean");
 
                     b.Property<string>("MinClientVersion")
-                        .HasColumnType("character varying(44)")
-                        .HasMaxLength(44);
+                        .HasMaxLength(44)
+                        .HasColumnType("character varying(44)");
 
                     b.Property<string>("NormalizedVersionString")
                         .IsRequired()
-                        .HasColumnName("Version")
+                        .HasMaxLength(64)
                         .HasColumnType("citext")
-                        .HasMaxLength(64);
+                        .HasColumnName("Version");
 
                     b.Property<string>("OriginalVersionString")
-                        .HasColumnName("OriginalVersion")
+                        .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
-                        .HasMaxLength(64);
+                        .HasColumnName("OriginalVersion");
 
                     b.Property<string>("ProjectUrl")
-                        .HasColumnType("character varying(4000)")
-                        .HasMaxLength(4000);
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<DateTime>("Published")
-                        .HasColumnType("timestamp without time zone");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("ReleaseNotes")
-                        .HasColumnName("ReleaseNotes")
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("ReleaseNotes");
 
                     b.Property<string>("RepositoryType")
-                        .HasColumnType("character varying(100)")
-                        .HasMaxLength(100);
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<string>("RepositoryUrl")
-                        .HasColumnType("character varying(4000)")
-                        .HasMaxLength(4000);
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<bool>("RequireLicenseAcceptance")
                         .HasColumnType("boolean");
@@ -113,16 +121,16 @@ namespace BaGetter.Database.PostgreSql.Migrations
                         .HasColumnType("integer");
 
                     b.Property<string>("Summary")
-                        .HasColumnType("character varying(4000)")
-                        .HasMaxLength(4000);
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<string>("Tags")
-                        .HasColumnType("character varying(4000)")
-                        .HasMaxLength(4000);
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
 
                     b.Property<string>("Title")
-                        .HasColumnType("character varying(256)")
-                        .HasMaxLength(256);
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.HasKey("Key");
 
@@ -138,23 +146,24 @@ namespace BaGetter.Database.PostgreSql.Migrations
                 {
                     b.Property<int>("Key")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Key"));
 
                     b.Property<string>("Id")
-                        .HasColumnType("citext")
-                        .HasMaxLength(128);
+                        .HasMaxLength(128)
+                        .HasColumnType("citext");
 
                     b.Property<int?>("PackageKey")
                         .HasColumnType("integer");
 
                     b.Property<string>("TargetFramework")
-                        .HasColumnType("character varying(256)")
-                        .HasMaxLength(256);
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<string>("VersionRange")
-                        .HasColumnType("character varying(256)")
-                        .HasMaxLength(256);
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.HasKey("Key");
 
@@ -169,19 +178,20 @@ namespace BaGetter.Database.PostgreSql.Migrations
                 {
                     b.Property<int>("Key")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Key"));
 
                     b.Property<string>("Name")
-                        .HasColumnType("citext")
-                        .HasMaxLength(512);
+                        .HasMaxLength(512)
+                        .HasColumnType("citext");
 
                     b.Property<int>("PackageKey")
                         .HasColumnType("integer");
 
                     b.Property<string>("Version")
-                        .HasColumnType("character varying(64)")
-                        .HasMaxLength(64);
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.HasKey("Key");
 
@@ -196,12 +206,13 @@ namespace BaGetter.Database.PostgreSql.Migrations
                 {
                     b.Property<int>("Key")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Key"));
 
                     b.Property<string>("Moniker")
-                        .HasColumnType("citext")
-                        .HasMaxLength(256);
+                        .HasMaxLength(256)
+                        .HasColumnType("citext");
 
                     b.Property<int>("PackageKey")
                         .HasColumnType("integer");
@@ -220,6 +231,8 @@ namespace BaGetter.Database.PostgreSql.Migrations
                     b.HasOne("BaGetter.Core.Package", "Package")
                         .WithMany("Dependencies")
                         .HasForeignKey("PackageKey");
+
+                    b.Navigation("Package");
                 });
 
             modelBuilder.Entity("BaGetter.Core.PackageType", b =>
@@ -229,6 +242,8 @@ namespace BaGetter.Database.PostgreSql.Migrations
                         .HasForeignKey("PackageKey")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Package");
                 });
 
             modelBuilder.Entity("BaGetter.Core.TargetFramework", b =>
@@ -238,6 +253,17 @@ namespace BaGetter.Database.PostgreSql.Migrations
                         .HasForeignKey("PackageKey")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Package");
+                });
+
+            modelBuilder.Entity("BaGetter.Core.Package", b =>
+                {
+                    b.Navigation("Dependencies");
+
+                    b.Navigation("PackageTypes");
+
+                    b.Navigation("TargetFrameworks");
                 });
 #pragma warning restore 612, 618
         }
