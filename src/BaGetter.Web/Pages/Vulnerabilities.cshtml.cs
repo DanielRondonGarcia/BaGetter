@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -8,6 +9,7 @@ using BaGetter.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using NuGet.Versioning;
 
 namespace BaGetter.Web;
 
@@ -17,15 +19,31 @@ namespace BaGetter.Web;
 /// trigger an explicit rescan. A regular GET only reads the last snapshot —
 /// it never starts a scan; scans run automatically in the background (hourly)
 /// or when the Rescan form is submitted (with antiforgery protection).
+///
+/// The page also exports the archived analysis history (T7) as a CSV
+/// download: <c>GET /vulnerabilities?handler=ExportCsv</c> with an inclusive
+/// UTC date range and optional package/version filters. The live analysis
+/// itself is never modified by an export.
 /// </summary>
 [Authorize(AuthenticationSchemes = AuthenticationConstants.NugetBasicAuthenticationScheme, Policy = AuthenticationConstants.NugetUserPolicy)]
 public class VulnerabilitiesModel : PageModel
 {
     private readonly HostedVulnerabilityService _scanner;
+    private readonly VulnerabilityHistoryStore _historyStore;
+    private readonly VulnerabilityCsvExporter _csvExporter;
 
-    public VulnerabilitiesModel(HostedVulnerabilityService scanner)
+    /// <summary>
+    /// The history store is optional so original single-service constructor
+    /// callers keep working; the exporter is optional for the same reason.
+    /// </summary>
+    public VulnerabilitiesModel(
+        HostedVulnerabilityService scanner,
+        VulnerabilityHistoryStore historyStore = null,
+        VulnerabilityCsvExporter csvExporter = null)
     {
         _scanner = scanner ?? throw new ArgumentNullException(nameof(scanner));
+        _historyStore = historyStore;
+        _csvExporter = csvExporter;
     }
 
     /// <summary>The latest stable snapshot (never null).</summary>
@@ -37,10 +55,178 @@ public class VulnerabilitiesModel : PageModel
     /// </summary>
     public HostedVulnerabilityStatus EffectiveStatus { get; private set; }
 
-    public void OnGet()
+    /// <summary>
+    /// The history archive's status as seen by this render (null when no
+    /// history store is available).
+    /// </summary>
+    public VulnerabilityHistoryStatusInfo ExportStatus { get; private set; }
+
+    /// <summary>
+    /// Prefilled export form values: the requested package ID/version from a
+    /// query parameter (for example from a package page's export link).
+    /// </summary>
+    public string ExportPackageId { get; private set; }
+
+    public string ExportVersion { get; private set; }
+
+    /// <summary>Today's UTC date, the default "from"/"to" for the export form.</summary>
+    public string ExportTodayUtc =>
+        DateTime.UtcNow.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    public void OnGet(string exportPackageId = null, string exportVersion = null)
     {
         Snapshot = _scanner.Current;
         EffectiveStatus = _scanner.Status;
+        ExportPackageId = exportPackageId;
+        ExportVersion = exportVersion;
+        ExportStatus = _historyStore?.GetStatus();
+    }
+
+    /// <summary>
+    /// The CSV download (T7). All inputs are validated BEFORE any history
+    /// read or filesystem access, so rejected input never touches the
+    /// archive. A missing or unavailable history is an explicit 503 — never a
+    /// fabricated empty report; a valid empty interval is a header-only CSV.
+    /// The download inherits the page's read policy (NuGet basic auth).
+    /// </summary>
+    public async Task<IActionResult> OnGetExportCsvAsync(
+        string from,
+        string to,
+        string packageId,
+        string version,
+        CancellationToken cancellationToken)
+    {
+        // 1. Input validation first; nothing below runs for rejected input.
+        var validationError = ValidateExportInputs(
+            from, to, packageId, version,
+            out var fromDate, out var toDate, out var packageIdFilter, out var versionFilter);
+        if (validationError != null)
+        {
+            return PlainText(400, validationError);
+        }
+
+        // 2. The history archive must exist and be readable; the live
+        // analysis above is never touched by this handler.
+        if (_historyStore == null || !_historyStore.IsConfigured)
+        {
+            return PlainText(
+                503,
+                "Vulnerability history is not configured (Vulnerabilities:History:Path), " +
+                "so no analysis history CSV can be exported.");
+        }
+
+        var status = _historyStore.GetStatus();
+        if (status.Availability == VulnerabilityHistoryAvailability.Unavailable)
+        {
+            return PlainText(
+                503,
+                "The vulnerability analysis history is currently unavailable, " +
+                "so the CSV export was aborted. " +
+                (status.LastError ?? "The configured history path is not usable."));
+        }
+
+        if (_csvExporter == null)
+        {
+            return PlainText(
+                503,
+                "Vulnerability history is not configured (Vulnerabilities:History:Path), " +
+                "so no analysis history CSV can be exported.");
+        }
+
+        // 3. Build the complete export BEFORE any response header is sent, so
+        // a corrupt or unreadable history fails the whole download instead of
+        // delivering a partial CSV.
+        try
+        {
+            var export = await _csvExporter.ExportAsync(
+                fromDate, toDate, packageIdFilter, versionFilter, cancellationToken);
+            return new FileStreamResult(export.Content, VulnerabilityCsvExporter.ContentType)
+            {
+                FileDownloadName = export.FileName,
+            };
+        }
+        catch (VulnerabilityHistoryUnavailableException exception)
+        {
+            return PlainText(
+                503,
+                "The vulnerability analysis history could not be read, so the CSV export " +
+                "was aborted instead of returning a partial download. " + exception.Message);
+        }
+    }
+
+    private static string ValidateExportInputs(
+        string from,
+        string to,
+        string packageId,
+        string version,
+        out DateOnly fromDate,
+        out DateOnly toDate,
+        out string packageIdFilter,
+        out string versionFilter)
+    {
+        fromDate = default;
+        toDate = default;
+        packageIdFilter = null;
+        versionFilter = null;
+
+        if (string.IsNullOrWhiteSpace(from))
+        {
+            return "The export request is invalid: the 'from' date is required and " +
+                   "must use the exact YYYY-MM-DD format (UTC).";
+        }
+
+        if (string.IsNullOrWhiteSpace(to))
+        {
+            return "The export request is invalid: the 'to' date is required and " +
+                   "must use the exact YYYY-MM-DD format (UTC).";
+        }
+
+        if (!DateOnly.TryParseExact(
+                from.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out fromDate))
+        {
+            return "The export request is invalid: the 'from' date must use the exact " +
+                   "YYYY-MM-DD format (UTC), not '" + from + "'.";
+        }
+
+        if (!DateOnly.TryParseExact(
+                to.Trim(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out toDate))
+        {
+            return "The export request is invalid: the 'to' date must use the exact " +
+                   "YYYY-MM-DD format (UTC), not '" + to + "'.";
+        }
+
+        if (fromDate > toDate)
+        {
+            return "The export request is invalid: the 'from' date must not be after the 'to' date.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(packageId))
+        {
+            packageIdFilter = packageId.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            if (!NuGetVersion.TryParse(version.Trim(), out _))
+            {
+                return "The export request is invalid: the 'version' filter must be a valid " +
+                       "NuGet version (for example 1.2.3), not '" + version + "'.";
+            }
+
+            versionFilter = version.Trim();
+        }
+
+        return null;
+    }
+
+    private static ContentResult PlainText(int statusCode, string message)
+    {
+        return new ContentResult
+        {
+            Content = message,
+            ContentType = "text/plain",
+            StatusCode = statusCode,
+        };
     }
 
     /// <summary>

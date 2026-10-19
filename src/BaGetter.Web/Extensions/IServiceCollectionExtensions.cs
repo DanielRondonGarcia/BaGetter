@@ -69,6 +69,7 @@ public static class IServiceCollectionExtensions
                 provider.GetRequiredService<IOptions<VulnerabilityHistoryOptions>>().Value,
                 provider.GetRequiredService<IHostEnvironment>(),
                 provider.GetRequiredService<ILogger<VulnerabilityHistoryStore>>()));
+        services.AddSingleton<VulnerabilityCsvExporter>();
         services.AddSingleton<HostedVulnerabilityService>();
         services.AddHostedService<VulnerabilityScanBackgroundService>();
 

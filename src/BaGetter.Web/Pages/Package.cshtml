@@ -193,6 +193,13 @@ else
                         }
                         <p class="text-muted">@Model.PackageVulnerability.Note</p>
                         <partial name="Shared/_VulnerabilityFindings" for="@Model.PackageVulnerability.Findings" />
+                        <p>
+                            <a asp-page="/Vulnerabilities"
+                               asp-route-exportPackageId="@Model.PackageVulnerability.PackageId"
+                               asp-route-exportVersion="@Model.PackageVulnerability.PackageVersion">
+                                Export analysis history for this package version
+                            </a>
+                        </p>
                     }
                 </div>);
             }

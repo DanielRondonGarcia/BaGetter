@@ -1,6 +1,7 @@
 @page
 @model VulnerabilitiesModel
 @using BaGetter.Web.Services
+@using System.Globalization
 @{
     ViewData["Title"] = "Vulnerabilities";
 }
@@ -55,6 +56,94 @@
                 </form>
             </div>
         </div>
+    </div>
+</div>
+
+<div class="panel panel-default">
+    <div class="panel-body">
+        <h3>Export analysis history</h3>
+        <p class="text-muted">
+            Download the recorded analyses as a CSV file for a selected period of
+            <strong>analysis dates (UTC).</strong> History only covers successful scans
+            archived since <code>Vulnerabilities:History:Path</code> was configured:
+            it starts now and is not backfilled, and this server applies no retention.
+            An interval with no archived scans downloads the CSV header only.
+        </p>
+        @if (Model.ExportStatus == null || !Model.ExportStatus.IsConfigured)
+        {
+            <div class="alert alert-info" role="alert">
+                <p>Vulnerability history is not configured (Vulnerabilities:History:Path),
+                so there is no analysis history to export. Scans still run and the
+                dashboard above stays available.</p>
+            </div>
+        }
+        else if (Model.ExportStatus.Availability == VulnerabilityHistoryAvailability.Unavailable)
+        {
+            <div class="alert alert-danger" role="alert">
+                <p><strong>The analysis history is currently unavailable, so CSV export is disabled.</strong>
+                @(Model.ExportStatus.LastError ?? "The configured history path could not be read.")</p>
+            </div>
+        }
+        else
+        {
+            @if (Model.ExportStatus.Availability == VulnerabilityHistoryAvailability.NoHistoryYet)
+            {
+                <div class="alert alert-info" role="alert">
+                    <p>No vulnerability analysis has been archived yet. History begins with the
+                    first successfully completed scan after the history path was configured;
+                    earlier scans were not backfilled. A downloaded interval without archived
+                    scans returns the CSV header only.</p>
+                </div>
+            }
+            <form method="get" asp-page-handler="ExportCsv" class="vulnerability-export-form">
+                <!-- Browser GET submissions replace the action's query with the
+                     successful controls, so the handler must be carried as a
+                     control value and not only inside the rendered action. -->
+                <input type="hidden" name="handler" value="ExportCsv" />
+                <div class="row">
+                    <div class="col-sm-2">
+                        <label class="vulnerability-export-label" for="vulnerability-export-from">From (UTC)</label>
+                        <input class="form-control" type="date" id="vulnerability-export-from"
+                               name="from" required min="0001-01-01" max="9999-12-31"
+                               value="@Model.ExportTodayUtc" />
+                    </div>
+                    <div class="col-sm-2">
+                        <label class="vulnerability-export-label" for="vulnerability-export-to">To (UTC)</label>
+                        <input class="form-control" type="date" id="vulnerability-export-to"
+                               name="to" required min="0001-01-01" max="9999-12-31"
+                               value="@Model.ExportTodayUtc" />
+                    </div>
+                    <div class="col-sm-3">
+                        <label class="vulnerability-export-label" for="vulnerability-export-package">Package ID (optional)</label>
+                        <input class="form-control" type="text" id="vulnerability-export-package"
+                               name="packageId" value="@Model.ExportPackageId"
+                               placeholder="exact package ID (optional)" />
+                    </div>
+                    <div class="col-sm-2">
+                        <label class="vulnerability-export-label" for="vulnerability-export-version">Version (optional)</label>
+                        <input class="form-control" type="text" id="vulnerability-export-version"
+                               name="version" value="@Model.ExportVersion"
+                               placeholder="e.g. 1.2.3 (optional)" />
+                    </div>
+                    <div class="col-sm-3 vulnerability-export-submit">
+                        <button type="submit" class="btn btn-default">
+                            <i class="ms-Icon ms-Icon--Download" aria-hidden="true"></i>
+                            Download CSV
+                        </button>
+                    </div>
+                </div>
+            </form>
+        }
+        @if (Model.ExportStatus != null && Model.ExportStatus.IsConfigured &&
+             Model.ExportStatus.Availability != VulnerabilityHistoryAvailability.Unavailable &&
+             Model.ExportStatus.LastError != null)
+        {
+            <div class="alert alert-warning" role="alert">
+                <p><strong>A history problem was recorded</strong> (the archive may be incomplete);
+                the dashboard's current analysis above remains valid.<br />
+                @Model.ExportStatus.LastError</p>
+            </div>
+        }
     </div>
 </div>
 

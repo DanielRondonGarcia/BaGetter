@@ -38,6 +38,16 @@
     font-weight: 600;
 }
 
+.vulnerability-export-form .vulnerability-export-label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.vulnerability-export-submit {
+    padding-top: 26px;
+}
+
 @media (prefers-color-scheme: dark) {
     .vulnerability-dashboard .panel {
         color: var(--text-color);
@@ -120,5 +130,28 @@
 
     .vulnerability-version {
         border-top-color: #333;
+    }
+
+    /* Export form: dark controls, native datepicker included. */
+    .vulnerability-dashboard .vulnerability-export-form .form-control {
+        color: var(--text-color);
+        background-color: var(--code-bg-color);
+        border-color: #666;
+        color-scheme: dark;
+    }
+
+    .vulnerability-dashboard .vulnerability-export-form .form-control::placeholder {
+        color: #888;
+    }
+
+    .vulnerability-dashboard .vulnerability-export-form .form-control:focus,
+    .vulnerability-dashboard .vulnerability-export-form .form-control:focus-visible {
+        border-color: #79b8ff;
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(121, 184, 255, 0.35);
+    }
+
+    .vulnerability-export-form .vulnerability-export-label {
+        color: var(--text-color);
     }
 }
