@@ -278,3 +278,5 @@ __pycache__/
 # Chart dependencies
 charts/
 Chart.lock
+# BaGetter sample app: runtime data (vulnerability analysis history archive)
+samples/BaGetterWebApplication/data/security-history/

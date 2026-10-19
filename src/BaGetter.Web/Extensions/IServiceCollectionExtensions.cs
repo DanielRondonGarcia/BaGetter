@@ -10,6 +10,9 @@ using BaGetter.Web.Helper;
 using BaGetter.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace BaGetter;
 
@@ -50,6 +53,22 @@ public static class IServiceCollectionExtensions
             });
         services.AddSingleton<IHostedPackageReader, HostedPackageReader>();
         services.AddSingleton<NuGetVulnerabilityFeed>();
+        // Vulnerability analysis history (Vulnerabilities:History:Path): every
+        // successfully completed scan is appended as one immutable JSON
+        // snapshot so a UTC date range can later be exported. A missing or
+        // unusable path never fails a scan; it only disables archive/export
+        // and stays visible through the store's status/LastError.
+        services
+            .AddOptions<VulnerabilityHistoryOptions>()
+            .BindConfiguration("Vulnerabilities:History");
+        // Explicit factory: the store takes the bound options VALUE (not the
+        // IOptions wrapper), so a real host that resolves the store gets a
+        // single dependency graph instead of an unregistered raw options type.
+        services.AddSingleton<VulnerabilityHistoryStore>(provider =>
+            new VulnerabilityHistoryStore(
+                provider.GetRequiredService<IOptions<VulnerabilityHistoryOptions>>().Value,
+                provider.GetRequiredService<IHostEnvironment>(),
+                provider.GetRequiredService<ILogger<VulnerabilityHistoryStore>>()));
         services.AddSingleton<HostedVulnerabilityService>();
         services.AddHostedService<VulnerabilityScanBackgroundService>();
 
