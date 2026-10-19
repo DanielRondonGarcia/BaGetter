@@ -20,6 +20,7 @@
     <link rel="stylesheet" href="~/_content/BaGetter.Web/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/_content/BaGetter.Web/lib/office-ui-fabric-core/dist/css/fabric.min.css" />
     <link rel="stylesheet" href="~/_content/BaGetter.Web/css/site.css" />
+    <link rel="stylesheet" href="~/_content/BaGetter.Web/css/vulnerabilities.css" />
 
     <title>@ViewData["Title"] - BaGetter</title>
 </head>
@@ -32,6 +33,7 @@
                         <ul class="nav navbar-nav" role="tablist">
                             <li role="presentation"><a asp-area="" asp-page="/Index" role="tab" nav-link><span>Packages</span></a></li>
                             <li role="presentation"><a asp-area="" asp-page="/Upload" role="tab" nav-link><span>Upload</span></a></li>
+                            <li role="presentation"><a asp-area="" asp-page="/Vulnerabilities" role="tab" nav-link><span>Security</span></a></li>
                             @if (StatisticsOptions.Value.EnableStatisticsPage)
                             {
                                 <li role="presentation"><a asp-area="" asp-page="/Statistics" role="tab" nav-link><span>Statistics</span></a></li>

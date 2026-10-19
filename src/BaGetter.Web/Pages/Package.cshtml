@@ -1,5 +1,6 @@
 @page "/packages/{id}/{version?}"
 @model PackageModel
+@using BaGetter.Web.Services
 
 @{
     ViewData["Title"] = Model.Found
@@ -156,6 +157,42 @@ else
                                 }
                             </ul>
                         }
+                    }
+                </div>);
+            }
+
+            @{ ExpandableSection("Vulnerabilities", "ms-Icon--Warning", expanded: false,
+                @<div class="package-vulnerabilities">
+                    @if (!Model.VulnerabilityScanningAvailable)
+                    {
+                        <div class="text-muted">Vulnerability scanning is not available for this server.</div>
+                    }
+                    else if (Model.VulnerabilitySnapshot == null ||
+                             Model.VulnerabilitySnapshot.Status == HostedVulnerabilityStatus.NotScanned)
+                    {
+                        <div class="text-muted">No vulnerability scan has completed yet. Scanning starts
+                        automatically shortly after the server starts and repeats every hour.</div>
+                    }
+                    else if (!Model.VulnerabilitySnapshot.HasSuccessfulScan)
+                    {
+                        <div class="text-muted"><strong>The vulnerability scan did not complete</strong>, so there are
+                        no results for this package yet. @Model.VulnerabilitySnapshot.Error</div>
+                    }
+                    else if (Model.PackageVulnerability == null)
+                    {
+                        <div class="text-muted">This package version has not been scanned yet. It was hosted
+                        after the last completed scan; the automatic hourly scan (or Rescan now on the
+                        Security page) will cover it.</div>
+                    }
+                    else
+                    {
+                        @if (Model.VulnerabilitySnapshot.IsStale)
+                        {
+                            <div class="alert alert-warning" role="alert">The last scan did not complete, so
+                            these results are preserved from the last successful scan and are stale.</div>
+                        }
+                        <p class="text-muted">@Model.PackageVulnerability.Note</p>
+                        <partial name="Shared/_VulnerabilityFindings" for="@Model.PackageVulnerability.Findings" />
                     }
                 </div>);
             }

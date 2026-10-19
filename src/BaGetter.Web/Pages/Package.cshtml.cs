@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using BaGetter.Core;
+using BaGetter.Web.Services;
 using Markdig;
 using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -21,6 +22,7 @@ public class PackageModel : PageModel
     private readonly IPackageContentService _content;
     private readonly ISearchService _search;
     private readonly IUrlGenerator _url;
+    private readonly HostedVulnerabilityService _vulnerabilities;
 
     static PackageModel()
     {
@@ -34,11 +36,23 @@ public class PackageModel : PageModel
         IPackageContentService content,
         ISearchService search,
         IUrlGenerator url)
+        : this(packages, content, search, url, vulnerabilityService: null)
+    {
+    }
+
+    [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
+    public PackageModel(
+        IPackageService packages,
+        IPackageContentService content,
+        ISearchService search,
+        IUrlGenerator url,
+        HostedVulnerabilityService vulnerabilityService)
     {
         _packages = packages ?? throw new ArgumentNullException(nameof(packages));
         _content = content ?? throw new ArgumentNullException(nameof(content));
         _search = search ?? throw new ArgumentNullException(nameof(search));
         _url = url ?? throw new ArgumentNullException(nameof(url));
+        _vulnerabilities = vulnerabilityService;
     }
 
     public bool Found { get; private set; }
@@ -53,6 +67,14 @@ public class PackageModel : PageModel
     public IReadOnlyList<PackageDependent> UsedBy { get; set; }
     public IReadOnlyList<DependencyGroupModel> DependencyGroups { get; private set; }
     public IReadOnlyList<VersionModel> Versions { get; private set; }
+
+    /// <summary>The vulnerability evaluation of the displayed package version, or null.</summary>
+    public HostedPackageVulnerability PackageVulnerability { get; private set; }
+
+    /// <summary>The vulnerability snapshot the evaluation comes from, or null.</summary>
+    public HostedVulnerabilitySnapshot VulnerabilitySnapshot { get; private set; }
+
+    public bool VulnerabilityScanningAvailable => _vulnerabilities != null;
 
     public HtmlString Readme { get; private set; }
 
@@ -100,6 +122,13 @@ public class PackageModel : PageModel
         DependencyGroups = ToDependencyGroups(Package);
         Versions = ToVersions(listedPackages, packageVersion);
 
+        if (_vulnerabilities != null)
+        {
+            VulnerabilitySnapshot = _vulnerabilities.Current;
+            PackageVulnerability = FindPackageVulnerability(
+                VulnerabilitySnapshot, Package.Id, packageVersion);
+        }
+
         if (Package.HasReadme)
         {
             Readme = await GetReadmeHtmlStringOrNullAsync(Package.Id, packageVersion, cancellationToken);
@@ -112,6 +141,24 @@ public class PackageModel : PageModel
             : Package.IconUrlString;
         LicenseUrl = Package.LicenseUrlString;
         PackageDownloadUrl = _url.GetPackageDownloadUrl(Package.Id, packageVersion);
+    }
+
+    /// <summary>
+    /// Selects the scanner result for this exact package ID and version from
+    /// the current snapshot. Matching is case-insensitive on the package ID
+    /// and compares normalized versions. Null when the snapshot has no result
+    /// for this exact ID + version (e.g. the package was hosted after the last
+    /// completed scan).
+    /// </summary>
+    private static HostedPackageVulnerability FindPackageVulnerability(
+        HostedVulnerabilitySnapshot snapshot,
+        string packageId,
+        NuGetVersion version)
+    {
+        return snapshot.Packages.FirstOrDefault(candidate =>
+            string.Equals(candidate.PackageId, packageId, StringComparison.OrdinalIgnoreCase) &&
+            NuGetVersion.TryParse(candidate.PackageVersion, out var candidateVersion) &&
+            candidateVersion.Equals(version));
     }
 
     private static List<DependencyGroupModel> ToDependencyGroups(Package package)

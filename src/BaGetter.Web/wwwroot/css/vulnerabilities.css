@@ -1,0 +1,49 @@
+/*
+ * Vulnerability dashboard and per-package accordion styles.
+ * Small, theme-aware; severity is never signaled by color alone (the
+ * severity name is always rendered as text next to the badge).
+ */
+
+.vulnerability-status-list dt {
+    font-weight: bold;
+}
+
+.vulnerability-rescan {
+    text-align: right;
+}
+
+.vulnerability-package {
+    border: 1px solid #d3d3d3;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    padding: 6px 12px;
+}
+
+.vulnerability-package > summary {
+    cursor: pointer;
+    padding: 4px 0;
+}
+
+.vulnerability-version {
+    border-top: 1px solid #d3d3d3;
+    margin-top: 6px;
+    padding-top: 8px;
+}
+
+.vulnerability-findings-table {
+    margin-top: 4px;
+}
+
+.vulnerability-confidence {
+    font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+    .vulnerability-package {
+        border-color: #444;
+    }
+
+    .vulnerability-version {
+        border-top-color: #333;
+    }
+}

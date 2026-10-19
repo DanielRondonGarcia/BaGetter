@@ -1,0 +1,161 @@
+@page
+@model VulnerabilitiesModel
+@using BaGetter.Web.Services
+@{
+    ViewData["Title"] = "Vulnerabilities";
+}
+
+<div class="row">
+    <div class="col-sm-12">
+        <h2>Vulnerabilities</h2>
+        <p class="text-muted">
+            Hosted packages are scanned automatically: once at startup and then every hour,
+            against the official NuGet vulnerability feed. The scan checks each hosted
+            package's stored versions and its declared dependency ranges; the installed
+            transitive dependency graph is not resolved.
+        </p>
+    </div>
+</div>
+
+<div class="panel panel-default">
+    <div class="panel-body">
+        <div class="row">
+            <div class="col-sm-8">
+                <dl class="vulnerability-status-list">
+                    <dt>Status</dt>
+                    <dd>@Model.DisplayStatus</dd>
+                    <dt>Last successful scan</dt>
+                    <dd>
+                        @(Model.LastSuccessfulScanText ?? "Never (no successful scan has completed yet)")
+                    </dd>
+                    @if (Model.Snapshot.IsStale)
+                    {
+                        <dt>Data freshness</dt>
+                        <dd>Stale &mdash; the results shown are preserved from the last successful scan</dd>
+                    }
+                    @if (Model.Snapshot.IsStale || Model.EffectiveStatus == HostedVulnerabilityStatus.Failed)
+                    {
+                        <dt>Rescan</dt>
+                        <dd>Use the "Rescan now" button; do not rely on the results below as current</dd>
+                    }
+                    @if (Model.Snapshot.Error != null)
+                    {
+                        <dt>Latest error</dt>
+                        <dd>@Model.Snapshot.Error</dd>
+                    }
+                </dl>
+            </div>
+            <div class="col-sm-4">
+                <form method="post" asp-page-handler="Refresh" class="vulnerability-rescan">
+                    <button type="submit" class="btn btn-default">
+                        <i class="ms-Icon ms-Icon--Refresh" aria-hidden="true"></i>
+                        Rescan now
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Model.EffectiveStatus == HostedVulnerabilityStatus.NotScanned)
+{
+    <div class="alert alert-info" role="alert">
+        <p>No vulnerability scan has completed yet. The first scan starts automatically
+        shortly after the server starts and repeats every hour, or you can use the
+        "Rescan now" button to start one immediately.</p>
+    </div>
+}
+@if (Model.EffectiveStatus == HostedVulnerabilityStatus.Scanning)
+{
+    <div class="alert alert-info" role="alert">
+        <p>A scan is running now. The results below are the last stable snapshot.</p>
+    </div>
+}
+@if (Model.EffectiveStatus == HostedVulnerabilityStatus.Failed)
+{
+    <div class="alert alert-danger" role="alert">
+        <p><strong>The last scan did not complete, so there is no new report.</strong> @Model.Snapshot.Error</p>
+        @if (Model.Snapshot.HasSuccessfulScan)
+        {
+            <p>The results below are preserved from the last successful scan
+            (@Model.LastSuccessfulScanText) and are stale.</p>
+        }
+    </div>
+}
+@if (Model.Snapshot.HasSuccessfulScan)
+{
+    <div class="panel panel-default">
+        <div class="panel-body">
+            <div class="row">
+                <div class="col-sm-3">
+                    <h4>@Model.PackageRowCount</h4>
+                    <p class="text-muted">hosted package rows<br />(ID + version combinations)</p>
+                </div>
+                <div class="col-sm-3">
+                    <h4>@Model.PackagesWithFindingsCount</h4>
+                    <p class="text-muted">package rows with findings</p>
+                </div>
+                <div class="col-sm-3">
+                    <h4>@Model.FindingCount</h4>
+                    <p class="text-muted">findings (advisory associations;<br />@Model.ConfirmedFindingCount confirmed, @Model.PotentialFindingCount potential)</p>
+                </div>
+                <div class="col-sm-3">
+                    <h4>@Model.UniqueAdvisoryCount</h4>
+                    <p class="text-muted">unique advisories<br />(distinct advisory links)</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (Model.FindingsBySeverity.Any())
+    {
+        <div class="vulnerability-severity-summary">
+            <h3>Findings by severity</h3>
+            <ul class="list-inline">
+                @foreach (var severity in Model.FindingsBySeverity)
+                {
+                    <li><span class="label @VulnerabilitiesModel.SeverityBadgeClass(severity.Name)">@severity.Name</span> @severity.Count findings</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <h3>Hosted packages</h3>
+    <p class="text-muted">
+        Each section lists a hosted package (by ID) and its scanned versions.
+        "Affected" means a stored exact version (or a pinned declared dependency)
+        matches a known advisory; "Potential exposure" means a declared dependency
+        range overlaps an advisory range and the installed version is not resolved.
+        No known advisory is <strong>not covered</strong>, not "safe": packages that
+        are private or simply unlisted cannot appear in the public advisory feed.
+    </p>
+
+    @if (!Model.PackageGroups.Any())
+    {
+        <p class="text-muted">There are no hosted packages in the catalogue.</p>
+    }
+
+    @foreach (var group in Model.PackageGroups)
+    {
+        <details class="vulnerability-package">
+            <summary>
+                <strong>@group.PackageId</strong>
+                <span class="label @VulnerabilitiesModel.StateBadgeClass(group.WorstState)">@VulnerabilitiesModel.StateLabel(group.WorstState)</span>
+                <span class="text-muted">(@group.Versions.Count version@(group.Versions.Count == 1 ? "" : "s"))</span>
+            </summary>
+            @foreach (var version in group.Versions)
+            {
+                <div class="vulnerability-version">
+                    <p>
+                        <a asp-page="/Package" asp-route-id="@group.PackageId" asp-route-version="@version.PackageVersion">
+                            @group.PackageId @version.PackageVersion
+                        </a>
+                        <span class="label @VulnerabilitiesModel.StateBadgeClass(version.State)">@VulnerabilitiesModel.StateLabel(version.State)</span>
+                    </p>
+                    <p class="text-muted">@version.Note</p>
+                    <partial name="Shared/_VulnerabilityFindings" for="@version.Findings" />
+                </div>
+            }
+        </details>
+    }
+}
