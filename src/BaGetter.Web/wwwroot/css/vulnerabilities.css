@@ -39,6 +39,81 @@
 }
 
 @media (prefers-color-scheme: dark) {
+    .vulnerability-dashboard .panel {
+        color: var(--text-color);
+        background-color: var(--navbar-bg-color);
+        border-color: #444;
+    }
+
+    .vulnerability-dashboard .text-muted {
+        color: #aaa;
+    }
+
+    .vulnerability-dashboard a {
+        color: #79b8ff;
+    }
+
+    .vulnerability-dashboard a:hover,
+    .vulnerability-dashboard a:focus {
+        color: #b5d8ff;
+    }
+
+    .vulnerability-dashboard .btn-default {
+        color: var(--text-color);
+        background-color: var(--code-bg-color);
+        border-color: #666;
+    }
+
+    .vulnerability-dashboard .btn-default:hover,
+    .vulnerability-dashboard .btn-default:focus,
+    .vulnerability-dashboard .btn-default:active {
+        color: #fff;
+        background-color: #444;
+        border-color: #888;
+    }
+
+    .vulnerability-dashboard .btn-default:focus-visible,
+    .vulnerability-package > summary:focus-visible {
+        outline: 2px solid #79b8ff;
+        outline-offset: 3px;
+    }
+
+    .vulnerability-dashboard .alert-info {
+        color: #b7def5;
+        background-color: #143140;
+        border-color: #29536b;
+    }
+
+    .vulnerability-dashboard .alert-danger {
+        color: #ffc3c3;
+        background-color: #3c2020;
+        border-color: #794848;
+    }
+
+    .vulnerability-dashboard .label-default {
+        color: #eee;
+        background-color: #444;
+    }
+
+    .vulnerability-dashboard .label-warning {
+        color: #201703;
+    }
+
+    .vulnerability-dashboard .label-danger {
+        color: #ffdedf;
+        background-color: #842e32;
+    }
+
+    .vulnerability-dashboard .label-info {
+        color: #d9f2ff;
+        background-color: #24566b;
+    }
+
+    .vulnerability-dashboard .table > thead > tr > th,
+    .vulnerability-dashboard .table > tbody > tr > td {
+        border-color: #444;
+    }
+
     .vulnerability-package {
         border-color: #444;
     }
