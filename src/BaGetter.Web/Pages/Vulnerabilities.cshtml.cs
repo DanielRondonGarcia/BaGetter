@@ -75,7 +75,7 @@ public class VulnerabilitiesModel : PageModel
     public string ExportTodayUtc =>
         DateTime.UtcNow.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-    public void OnGet(string exportPackageId = null, string exportVersion = null, int page = 1)
+    public void OnGet(string exportPackageId = null, string exportVersion = null, int pageNumber = 1)
     {
         Snapshot = _scanner.Current;
         EffectiveStatus = _scanner.Status;
@@ -90,7 +90,7 @@ public class VulnerabilitiesModel : PageModel
 
         TotalPackageGroupCount = packageGroups.Count;
         TotalPackagePages = (TotalPackageGroupCount + PackagePageSize - 1) / PackagePageSize;
-        PackagePageNumber = Math.Max(1, Math.Min(page, Math.Max(1, TotalPackagePages)));
+        PackagePageNumber = Math.Max(1, Math.Min(pageNumber, Math.Max(1, TotalPackagePages)));
         PackageGroups = packageGroups
             .Skip((PackagePageNumber - 1) * PackagePageSize)
             .Take(PackagePageSize)

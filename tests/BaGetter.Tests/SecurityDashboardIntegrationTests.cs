@@ -82,6 +82,96 @@ public class SecurityDashboardIntegrationTests
     }
 
     [Fact]
+    public async Task GetVulnerabilities_PaginationLinks_RoundTripAndPreserveExportFilters()
+    {
+        using var app = CreateSuccessfulApp(_output);
+        await AddPaginationPackagesAsync(app);
+        var requestsAfterScan = app.Feed.RequestCount;
+        var snapshotBefore = await app.GetStringAsync("api/security");
+
+        using var firstResponse = await app.GetAsync(
+            "vulnerabilities?exportPackageId=Private.App&exportVersion=1.0.0");
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        var first = await firstResponse.Content.ReadAsStringAsync();
+        Assert.Equal(Enumerable.Range(1, 50).Select(PaginationPackageId), DisplayedPaginationPackages(first));
+        Assert.Contains("page 1 of 2", first);
+
+        var next = PaginationLink(first, "next");
+        Assert.Contains("pageNumber=2", next);
+        Assert.Contains("exportPackageId=Private.App", next);
+        Assert.Contains("exportVersion=1.0.0", next);
+        using var secondResponse = await app.GetAsync(next);
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        var second = await secondResponse.Content.ReadAsStringAsync();
+        Assert.Equal(Enumerable.Range(51, 5).Select(PaginationPackageId), DisplayedPaginationPackages(second));
+        Assert.Contains("page 2 of 2", second);
+        Assert.Contains("<h4>55</h4>", second);
+
+        var previous = PaginationLink(second, "previous");
+        Assert.Contains("pageNumber=1", previous);
+        Assert.Contains("exportPackageId=Private.App", previous);
+        Assert.Contains("exportVersion=1.0.0", previous);
+        using var backResponse = await app.GetAsync(previous);
+        Assert.Equal(HttpStatusCode.OK, backResponse.StatusCode);
+        var back = await backResponse.Content.ReadAsStringAsync();
+        Assert.Equal(DisplayedPaginationPackages(first), DisplayedPaginationPackages(back));
+        Assert.Contains("page 1 of 2", back);
+        Assert.Equal(snapshotBefore, await app.GetStringAsync("api/security"));
+        Assert.Equal(requestsAfterScan, app.Feed.RequestCount);
+    }
+
+    [Theory]
+    [InlineData(99, 2, 51, 5)]
+    [InlineData(0, 1, 1, 50)]
+    [InlineData(-3, 1, 1, 50)]
+    public async Task GetVulnerabilities_PaginationQuery_ClampsThroughHttp(
+        int requestedPage, int expectedPage, int firstPackage, int count)
+    {
+        using var app = CreateSuccessfulApp(_output);
+        await AddPaginationPackagesAsync(app);
+        var requestsAfterScan = app.Feed.RequestCount;
+        var snapshotBefore = await app.GetStringAsync("api/security");
+
+        using var response = await app.GetAsync("vulnerabilities?pageNumber=" + requestedPage);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("page " + expectedPage + " of 2", content);
+        Assert.Equal(
+            Enumerable.Range(firstPackage, count).Select(PaginationPackageId),
+            DisplayedPaginationPackages(content));
+        Assert.Contains("<h4>55</h4>", content);
+        Assert.Equal(snapshotBefore, await app.GetStringAsync("api/security"));
+        Assert.Equal(requestsAfterScan, app.Feed.RequestCount);
+    }
+
+    private static string PaginationPackageId(int index) => "Pagination.Package." + index.ToString("D3");
+
+    private static async Task AddPaginationPackagesAsync(SecurityDashboardApplication app)
+    {
+        for (var index = 1; index <= 55; index++)
+        {
+            await app.AddPackageAsync(PackageStreamBuilder.Build(PaginationPackageId(index), "1.0.0"));
+        }
+
+        await app.RunScanAsync();
+    }
+
+    private static string[] DisplayedPaginationPackages(string content) => Regex
+        .Matches(content, "<strong>(Pagination[.]Package[.][0-9]+)</strong>")
+        .Select(match => match.Groups[1].Value)
+        .ToArray();
+
+    private static string PaginationLink(string content, string direction)
+    {
+        var match = Regex.Match(content,
+            "<li class=\"" + direction + "\">\\s*<a[^>]*href=\"([^\"]+)\"",
+            RegexOptions.Singleline);
+        Assert.True(match.Success, "Expected an enabled " + direction + " pagination link.");
+        return WebUtility.HtmlDecode(match.Groups[1].Value);
+    }
+
+    [Fact]
     public async Task GetVulnerabilities_BeforeAnySuccessfulScan_ShowsExplicitStatusWithoutFindings()
     {
         using var app = new SecurityDashboardApplication(_output, FailingFeedHandler(), configureCredentials: false, disableScheduledScan: true);

@@ -264,7 +264,7 @@
                     @if (Model.HasPreviousPackagePage)
                     {
                         <a asp-page="/Vulnerabilities"
-                           asp-route-page="@(Model.PackagePageNumber - 1)"
+                           asp-route-pageNumber="@(Model.PackagePageNumber - 1)"
                            asp-route-exportPackageId="@Model.ExportPackageId"
                            asp-route-exportVersion="@Model.ExportVersion">
                             <span aria-hidden="true">&larr;</span> Previous
@@ -279,7 +279,7 @@
                     @if (Model.HasNextPackagePage)
                     {
                         <a asp-page="/Vulnerabilities"
-                           asp-route-page="@(Model.PackagePageNumber + 1)"
+                           asp-route-pageNumber="@(Model.PackagePageNumber + 1)"
                            asp-route-exportPackageId="@Model.ExportPackageId"
                            asp-route-exportVersion="@Model.ExportVersion">
                             Next <span aria-hidden="true">&rarr;</span>
