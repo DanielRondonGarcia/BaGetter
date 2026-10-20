@@ -113,6 +113,13 @@ public class SecurityDashboardIntegrationTests
         // A package is never paginated away by its own version count.
         Assert.DoesNotContain("page 2", content);
         Assert.DoesNotContain("pageNumber=2", content);
+        // Raising the size never reintroduces version-row or eager-detail behavior.
+        using var sized = await app.GetAsync("vulnerabilities?pageSize=5000");
+        Assert.Equal(HttpStatusCode.OK, sized.StatusCode);
+        var sizedContent = await sized.Content.ReadAsStringAsync();
+        Assert.Contains("page 1 of 1", sizedContent);
+        Assert.Equal(1, Regex.Matches(sizedContent, "<strong>Pagination[.]ManyVersions</strong>").Count);
+        Assert.DoesNotContain("class=\"vulnerability-version\"", sizedContent);
         // Deliberately lazy: the initial payload must not embed detail markup
         // (not even hidden) and must not expose advisory content directly.
         Assert.DoesNotContain("class=\"vulnerability-version\"", content);
@@ -205,6 +212,12 @@ public class SecurityDashboardIntegrationTests
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
         Assert.True((await unknown.Content.ReadAsStringAsync()).Length > 0);
 
+        // The details handler is size-independent: pageSize is ignored there.
+        using var sized = await app.GetAsync(
+            "vulnerabilities?handler=PackageDetails&packageId=TestData&pageSize=5000");
+        Assert.Equal(HttpStatusCode.OK, sized.StatusCode);
+        Assert.Contains("class=\"vulnerability-version\"", await sized.Content.ReadAsStringAsync());
+
         // Rejected fragments must never mutate the analysis or contact the feed.
         Assert.Equal(snapshotBefore, await app.GetStringAsync("api/security"));
         Assert.Equal(requestsAfterScan, app.Feed.RequestCount);
@@ -276,6 +289,145 @@ public class SecurityDashboardIntegrationTests
         Assert.Equal(snapshotBefore, await app.GetStringAsync("api/security"));
         Assert.Equal(requestsAfterScan, app.Feed.RequestCount);
     }
+
+    // T2/S3: the optional pageSize query normalizes the package-group page
+    // size: default 50, positive values are honored up to a 1000 cap,
+    // nonpositive values fall back to 50. The requested size is honored
+    // truthfully in the selector (never "50" while serving 75), and the page
+    // number clamps against the chosen size's available pages.
+    [Theory]
+    [InlineData(100, 100, 1, 55)]
+    [InlineData(1000, 1000, 1, 55)]
+    [InlineData(5000, 1000, 1, 55)]
+    [InlineData(0, 50, 2, 50)]
+    [InlineData(-3, 50, 2, 50)]
+    [InlineData(75, 75, 1, 55)]
+    public async Task GetVulnerabilities_PageSizeQuery_IsNormalizedThroughHttp(
+        int requestedSize, int effectiveSize, int expectedPages, int shownGroups)
+    {
+        using var app = CreateSuccessfulApp(_output);
+        await AddPaginationPackagesAsync(app);
+        var requestsAfterScan = app.Feed.RequestCount;
+        var snapshotBefore = await app.GetStringAsync("api/security");
+
+        using var response = await app.GetAsync("vulnerabilities?pageSize=" + requestedSize);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Contains("page 1 of " + expectedPages, content);
+        Assert.Equal(
+            Enumerable.Range(1, shownGroups).Select(PaginationPackageId),
+            DisplayedPaginationPackages(content));
+        // The selector shows the size that is actually serving, never a preset lie.
+        Assert.Equal(
+            new[] { effectiveSize.ToString() },
+            SelectedPageSizeOptions(content));
+        // Aggregate counts and lazy behavior are size-independent.
+        Assert.Contains("<h4>55</h4>", content);
+        Assert.DoesNotContain("class=\"vulnerability-version\"", content);
+        Assert.DoesNotContain(AdvisoryUrl, content);
+        Assert.Equal(snapshotBefore, await app.GetStringAsync("api/security"));
+        Assert.Equal(requestsAfterScan, app.Feed.RequestCount);
+    }
+
+    // A positive nonpreset size (75) must be reflected truthfully as a
+    // transient selected option; presets stay unselected then.
+    [Fact]
+    public async Task GetVulnerabilities_PageSizeSelector_ReflectsNonPresetSizeTruthfully()
+    {
+        using var app = CreateSuccessfulApp(_output);
+        await AddPaginationPackagesAsync(app);
+
+        using var response = await app.GetAsync("vulnerabilities?pageSize=75");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains("<option value=\"75\" selected=\"selected\">75</option>", content);
+        Assert.DoesNotContain("<option value=\"50\" selected", content);
+        // The preset options still exist.
+        foreach (var preset in new[] { 50, 100, 250, 500, 1000 })
+        {
+            Assert.Contains(">" + preset + "</option>", content);
+        }
+    }
+
+    // The Apply form is a plain GET form: it carries the effective size and
+    // existing export prefills as successful controls (browser GET forms
+    // replace the action's query), and never a pageNumber control — so
+    // changing the size resets to page 1.
+    [Fact]
+    public async Task GetVulnerabilities_PageSizeForm_CarriesPrefillsAndResetsToFirstPage()
+    {
+        using var app = CreateSuccessfulApp(_output);
+        await AddPaginationPackagesAsync(app);
+
+        using var response = await app.GetAsync(
+            "vulnerabilities?exportPackageId=Private.App&exportVersion=1.0.0&pageSize=75");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        var form = PageSizedForm(content);
+
+        Assert.Contains("method=\"get\"", form);
+        Assert.Contains("\"vulnerability-page-size\"", form);
+        Assert.Contains("Apply", form);
+        Assert.Contains("name=\"exportPackageId\" value=\"Private.App\"", form);
+        Assert.Contains("name=\"exportVersion\" value=\"1.0.0\"", form);
+        // Changing the size resets to page 1: no pageNumber in the successful controls.
+        Assert.DoesNotContain("name=\"pageNumber\"", form);
+        Assert.DoesNotContain("name=\"handler\"", form);
+    }
+
+    [Fact]
+    public async Task GetVulnerabilities_PageSizeLinks_PreserveNormalizedSizeAndPrefills()
+    {
+        using var app = CreateSuccessfulApp(_output);
+        await AddPaginationPackagesAsync(app);
+
+        var url = "vulnerabilities?pageSize=25&exportPackageId=Private.App&exportVersion=1.0.0";
+        using var firstResponse = await app.GetAsync(url);
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        var first = await firstResponse.Content.ReadAsStringAsync();
+        Assert.Contains("page 1 of 3", first);
+        Assert.Equal(Enumerable.Range(1, 25).Select(PaginationPackageId), DisplayedPaginationPackages(first));
+        Assert.Equal(new[] { "25" }, SelectedPageSizeOptions(first));
+
+        var next = PaginationLink(first, "next");
+        Assert.Contains("pageNumber=2", next);
+        Assert.Contains("pageSize=25", next);
+        Assert.Contains("exportPackageId=Private.App", next);
+        Assert.Contains("exportVersion=1.0.0", next);
+        using var secondResponse = await app.GetAsync(next);
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        var second = await secondResponse.Content.ReadAsStringAsync();
+        Assert.Contains("page 2 of 3", second);
+        Assert.Equal(Enumerable.Range(26, 25).Select(PaginationPackageId), DisplayedPaginationPackages(second));
+        Assert.Equal(new[] { "25" }, SelectedPageSizeOptions(second));
+
+        // Overshooting clamps against the chosen size's pages: page 3 of 3.
+        using var last = await app.GetAsync("vulnerabilities?pageNumber=99&pageSize=25");
+        Assert.Equal(HttpStatusCode.OK, last.StatusCode);
+        var lastContent = await last.Content.ReadAsStringAsync();
+        Assert.Contains("page 3 of 3", lastContent);
+        Assert.Equal(Enumerable.Range(51, 5).Select(PaginationPackageId), DisplayedPaginationPackages(lastContent));
+
+        var previous = PaginationLink(second, "previous");
+        Assert.Contains("pageNumber=1", previous);
+        Assert.Contains("pageSize=25", previous);
+    }
+
+    private static string PageSizedForm(string content)
+    {
+        var match = Regex.Match(
+            content,
+            "<form[^>]*vulnerability-page-size-form[^>]*>[\\s\\S]*?</form>");
+        Assert.True(match.Success, "the page-size Apply form must be rendered.");
+        return match.Value;
+    }
+
+    private static string[] SelectedPageSizeOptions(string content) => Regex
+        .Matches(content, "<option value=\"([0-9]+)\" selected=\"selected\">")
+        .Select(match => match.Groups[1].Value)
+        .ToArray();
 
     private static string PaginationPackageId(int index) => "Pagination.Package." + index.ToString("D3");
 

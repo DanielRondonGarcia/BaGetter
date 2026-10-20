@@ -214,8 +214,8 @@
     <p class="text-muted">
         Each section lists one hosted package (by ID, matched case-insensitively) —
         one package per section, regardless of how many stored versions it has.
-        At most @VulnerabilitiesModel.PackagePageSize packages load per page;
-        additional packages continue on subsequent pages. A package's scanned
+        @Model.EffectivePackagePageSize packages load per page; additional
+        packages continue on subsequent pages. A package's scanned
         versions load lazily when you expand its section (with a loading
         skeleton while the request completes), so opening this page never
         downloads every package's full version history. "Affected" means a
@@ -231,6 +231,34 @@
             Showing hosted packages @Model.FirstPackageNumber&ndash;@Model.LastPackageNumber
             of @Model.TotalPackageGroupCount (page @Model.PackagePageNumber of @Model.TotalPackagePages).
         </p>
+        @* T2/S3: a plain GET Apply form — no JS dependency. Browser GET
+           submissions replace the action's query with the successful
+           controls, so the size and export prefills are carried as controls
+           and pageNumber is deliberately absent: applying a size resets to
+           page 1. A positive nonpreset size is shown as its own selected
+           option instead of pretending to serve 50. *@
+        <form method="get" asp-page="/Vulnerabilities" class="vulnerability-page-size-form">
+            <label class="vulnerability-page-size-label" for="vulnerability-page-size">Packages per page</label>
+            <select class="form-control" id="vulnerability-page-size" name="pageSize">
+                @foreach (var option in VulnerabilitiesModel.PageSizeOptions)
+                {
+                    <option value="@option" selected="@(Model.EffectivePackagePageSize == option)">@option</option>
+                }
+                @if (!Model.EffectivePageSizeIsPreset)
+                {
+                    <option value="@Model.EffectivePackagePageSize" selected="selected">@Model.EffectivePackagePageSize</option>
+                }
+            </select>
+            @if (Model.ExportPackageId != null)
+            {
+                <input type="hidden" name="exportPackageId" value="@Model.ExportPackageId" />
+            }
+            @if (Model.ExportVersion != null)
+            {
+                <input type="hidden" name="exportVersion" value="@Model.ExportVersion" />
+            }
+            <button type="submit" class="btn btn-default">Apply</button>
+        </form>
     }
 
     @if (!Model.PackageGroups.Any())
@@ -264,6 +292,7 @@
                     {
                         <a asp-page="/Vulnerabilities"
                            asp-route-pageNumber="@(Model.PackagePageNumber - 1)"
+                           asp-route-pageSize="@Model.EffectivePackagePageSize"
                            asp-route-exportPackageId="@Model.ExportPackageId"
                            asp-route-exportVersion="@Model.ExportVersion">
                             <span aria-hidden="true">&larr;</span> Previous
@@ -279,6 +308,7 @@
                     {
                         <a asp-page="/Vulnerabilities"
                            asp-route-pageNumber="@(Model.PackagePageNumber + 1)"
+                           asp-route-pageSize="@Model.EffectivePackagePageSize"
                            asp-route-exportPackageId="@Model.ExportPackageId"
                            asp-route-exportVersion="@Model.ExportVersion">
                             Next <span aria-hidden="true">&rarr;</span>

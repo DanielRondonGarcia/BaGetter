@@ -28,8 +28,27 @@ namespace BaGetter.Web;
 [Authorize(AuthenticationSchemes = AuthenticationConstants.NugetBasicAuthenticationScheme, Policy = AuthenticationConstants.NugetUserPolicy)]
 public class VulnerabilitiesModel : PageModel
 {
-    /// <summary>Maximum ID + version rows rendered, not distinct package IDs.</summary>
+    /// <summary>
+    /// The default (and fallback) number of package groups per page. Optional
+    /// pageSize query values may raise the effective size up to the 1000 cap.
+    /// </summary>
     public const int PackagePageSize = 50;
+
+    /// <summary>
+    /// The effective package-group page size for this request, after the
+    /// optional pageSize query is normalized (default 50, cap 1000, nonpositive
+    /// falls back to 50). The view, selector and navigation links always use
+    /// this value, so "page of N" and the selected option stay truthful.
+    /// </summary>
+    public int EffectivePackagePageSize { get; private set; } = PackagePageSize;
+
+    /// <summary>
+    /// Whether the effective size is one of the preset selector options; a
+    /// positive nonpreset value (like 75) is still honored and shown as a
+    /// transient selected option.
+    /// </summary>
+    public bool EffectivePageSizeIsPreset =>
+        Array.IndexOf(PageSizeOptions, EffectivePackagePageSize) >= 0;
 
     private readonly HostedVulnerabilityService _scanner;
     private readonly VulnerabilityHistoryStore _historyStore;
@@ -76,7 +95,14 @@ public class VulnerabilitiesModel : PageModel
     public string ExportTodayUtc =>
         DateTime.UtcNow.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-    public void OnGet(string exportPackageId = null, string exportVersion = null, int pageNumber = 1)
+    /// <summary>
+    /// The selectable package page sizes (labels for the Apply form). The
+    /// default is <see cref="PackagePageSize"/>; any positive nonpreset value
+    /// is honored truthfully up to the 1000 cap.
+    /// </summary>
+    public static readonly int[] PageSizeOptions = { 50, 100, 250, 500, 1000 };
+
+    public void OnGet(string exportPackageId = null, string exportVersion = null, int pageNumber = 1, int pageSize = 0)
     {
         Snapshot = _scanner.Current;
         EffectiveStatus = _scanner.Status;
@@ -93,14 +119,29 @@ public class VulnerabilitiesModel : PageModel
             .Select(group => new PackageVulnerabilityGroup(group.Key, group.ToList()))
             .ToList();
 
+        // T2/S3: optional pageSize. Absent/nonpositive input falls back to the
+        // default; positive values are honored up to the 1000 cap, and the
+        // effective (normalized) size is what the view and links reflect.
+        EffectivePackagePageSize = NormalizePageSize(pageSize);
+
         // GroupBy preserves first-seen order, so scan ordering is unchanged.
         TotalPackageGroupCount = packageGroups.Count;
-        TotalPackagePages = (TotalPackageGroupCount + PackagePageSize - 1) / PackagePageSize;
+        TotalPackagePages = (TotalPackageGroupCount + EffectivePackagePageSize - 1) / EffectivePackagePageSize;
         PackagePageNumber = Math.Max(1, Math.Min(pageNumber, Math.Max(1, TotalPackagePages)));
         PackageGroups = packageGroups
-            .Skip((PackagePageNumber - 1) * PackagePageSize)
-            .Take(PackagePageSize)
+            .Skip((PackagePageNumber - 1) * EffectivePackagePageSize)
+            .Take(EffectivePackagePageSize)
             .ToList();
+    }
+
+    private static int NormalizePageSize(int requestedSize)
+    {
+        if (requestedSize < 1)
+        {
+            return PackagePageSize;
+        }
+
+        return Math.Min(requestedSize, 1000);
     }
 
     /// <summary>
@@ -377,13 +418,16 @@ public class VulnerabilitiesModel : PageModel
 
     /// <summary>
     /// The first (one-based) package ID on the current page; packages, not
-    /// version rows, are the pagination unit.
+    /// version rows, are the pagination unit, and bounds use the effective
+    /// (normalized) page size.
     /// </summary>
     public int FirstPackageNumber => TotalPackageGroupCount == 0
         ? 0
-        : ((PackagePageNumber - 1) * PackagePageSize) + 1;
+        : ((PackagePageNumber - 1) * EffectivePackagePageSize) + 1;
 
-    public int LastPackageNumber => Math.Min(PackagePageNumber * PackagePageSize, TotalPackageGroupCount);
+    public int LastPackageNumber => Math.Min(
+        PackagePageNumber * EffectivePackagePageSize,
+        TotalPackageGroupCount);
 
     public bool HasPreviousPackagePage => PackagePageNumber > 1;
 
