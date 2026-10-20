@@ -63,7 +63,7 @@ jobs:
       - name: Generate changelog with git-cliff
         uses: tj-actions/git-cliff@v2.2.0
         with:
-          args: --latest --strip all --limit 50
+          args: --latest --strip all
           output: "CHANGELOG.md"
       - name: Create release with ncipollo/release-action
         uses: ncipollo/release-action@v1.14.0

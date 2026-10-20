@@ -46,6 +46,10 @@ test('git-cliff only receives inputs supported by its pinned action version', ()
     .split('      - name: Create release')[0];
   assert.match(changelog, /uses: tj-actions\/git-cliff@v2\.2\.0/);
   assert.doesNotMatch(changelog, /^\s+(config|working-dir):/m);
+  // git-cliff 2.x rejects --limit with "error: unexpected argument '--limit' found" (exit 2);
+  // only the supported flags --latest and --strip may be passed.
+  assert.doesNotMatch(changelog, /--limit/);
+  assert.match(changelog, /^          args: --latest --strip all$/m);
 });
 
 test('Build and Release verify the release configuration before delivering artifacts', () => {
