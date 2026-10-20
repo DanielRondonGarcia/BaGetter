@@ -35,6 +35,8 @@ jobs:
         uses: actions/setup-dotnet@v4.0.0
         with:
           global-json-file: global.json
+      - name: Validate release configuration
+        run: node --test tests/release-config/release-workflow.test.cjs
       - name: Test
         run: dotnet test --verbosity normal
 
@@ -63,8 +65,6 @@ jobs:
         with:
           args: --latest --strip all --limit 50
           output: "CHANGELOG.md"
-          working-dir: .
-          config: ./cliff.toml
       - name: Create release with ncipollo/release-action
         uses: ncipollo/release-action@v1.14.0
         with:
@@ -131,6 +131,10 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.version.outputs.RELEASE_VERSION }}
           tags: |
             ghcr.io/${{ env.REPO_OWNER_LOWER }}/bagetter:latest
             ghcr.io/${{ env.REPO_OWNER_LOWER }}/bagetter:${{ needs.version.outputs.RELEASE_VERSION }}
@@ -138,9 +142,12 @@ jobs:
             ghcr.io/${{ env.REPO_OWNER_LOWER }}/bagetter:${{ needs.version.outputs.RELEASE_MAJOR_VERSION }}
           build-args: |
             Version=${{ needs.version.outputs.RELEASE_VERSION }}
+      - name: Verify published multi-platform image
+        run: docker buildx imagetools inspect ghcr.io/${{ env.REPO_OWNER_LOWER }}/bagetter:${{ needs.version.outputs.RELEASE_VERSION }}
 
   release_helm_chart:
-    if: ${{ github.ref_type == 'tag' }}
+    # Fork releases must not publish into the upstream chart repository.
+    if: ${{ github.ref_type == 'tag' && github.repository == 'bagetter/BaGetter' }}
     needs: [version, verify]
     name: Release Helm chart to GitHub
     runs-on: ubuntu-latest
