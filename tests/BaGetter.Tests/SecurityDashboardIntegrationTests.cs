@@ -81,8 +81,11 @@ public class SecurityDashboardIntegrationTests
         return new SecurityDashboardApplication(output, handler, configureCredentials: false);
     }
 
+    // T1: the pagination unit is the case-insensitive package ID, and the
+    // initial render shows only summary headers. Version and finding content
+    // loads lazily from the PackageDetails fragment when a group is expanded.
     [Fact]
-    public async Task GetVulnerabilities_PaginationRows_BoundsManyVersionsOfOnePackage()
+    public async Task GetVulnerabilities_PaginatesByPackageId_InitialPageShowsSummaryOnly()
     {
         var handler = SuccessfulFeedHandler();
         handler.SetResponse(BasePageUrl, FeedPage("Pagination.ManyVersions", "[1.0.0, 2.0.0)", severity: 2));
@@ -99,41 +102,110 @@ public class SecurityDashboardIntegrationTests
             .Select(package => package.GetProperty("packageVersion").GetString()).ToArray();
         Assert.Equal(120, snapshot.RootElement.GetProperty("packageRowCount").GetInt32());
         Assert.Equal(120, snapshot.RootElement.GetProperty("findingCount").GetInt32());
-        var allVersions = new List<string>();
-        var url = "vulnerabilities";
 
-        for (var pageNumber = 1; pageNumber <= 3; pageNumber++)
-        {
-            using var response = await app.GetAsync(url);
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            var content = await response.Content.ReadAsStringAsync();
-            var versions = Regex.Matches(content,
-                    @"<div class=""vulnerability-version"">\s*<p>\s*<a[^>]*>\s*Pagination\.ManyVersions (1\.0\.\d+)\s*</a>")
-                .Select(match => match.Groups[1].Value).ToArray();
-            var expectedCount = pageNumber == 3 ? 20 : 50;
-            Assert.Equal(expectedCount, Regex.Matches(content, "class=\"vulnerability-version\"").Count);
-            Assert.Equal(expectedVersions.Skip((pageNumber - 1) * 50).Take(50), versions);
-            Assert.Contains("page " + pageNumber + " of 3", content);
-            Assert.Contains("<h4>120</h4>", content);
-            Assert.Contains("120 findings", content);
-            Assert.Contains("versions on this page", content);
-            allVersions.AddRange(versions);
-            if (pageNumber < 3)
-            {
-                url = PaginationLink(content, "next");
-                Assert.Contains("pageNumber=" + (pageNumber + 1), url);
-            }
-            else
-            {
-                Assert.DoesNotContain("pageNumber=4", content);
-                using var previous = await app.GetAsync(PaginationLink(content, "previous"));
-                Assert.Equal(HttpStatusCode.OK, previous.StatusCode);
-                Assert.Contains("page 2 of 3", await previous.Content.ReadAsStringAsync());
-            }
-        }
+        using var response = await app.GetAsync("vulnerabilities");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
 
-        Assert.Equal(expectedVersions, allVersions);
-        Assert.Equal(120, allVersions.Distinct().Count());
+        // One package group = one pagination unit, however many versions it holds.
+        Assert.Equal(1, Regex.Matches(content, "<strong>Pagination[.]ManyVersions</strong>").Count);
+        Assert.Contains("120 versions, loaded when expanded", content);
+        // A package is never paginated away by its own version count.
+        Assert.DoesNotContain("page 2", content);
+        Assert.DoesNotContain("pageNumber=2", content);
+        // Deliberately lazy: the initial payload must not embed detail markup
+        // (not even hidden) and must not expose advisory content directly.
+        Assert.DoesNotContain("class=\"vulnerability-version\"", content);
+        Assert.DoesNotContain(AdvisoryUrl, content);
+        // The lazy-loading client hooks must be present on the summary group;
+        // the script is deferred and cache-busted via the existing asset prefix.
+        Assert.Contains("data-package-id=\"Pagination.ManyVersions\"", content);
+        Assert.Contains("data-package-details", content);
+        var scriptMatch = Regex.Match(content, "<script[^>]*vulnerabilities[^>]*>");
+        Assert.True(
+            scriptMatch.Success,
+            "rendered vulnerabilities script: " + (scriptMatch.Success ? scriptMatch.Value : "MISSING; all script tags: " +
+                string.Join("|", Regex.Matches(content, "<script[^>]*>").Select(m => m.Value))));
+        // Deferred, cache-busted client script through the existing asset prefix.
+        Assert.Matches(
+            "<script[^>]*src=\"[^\"]*_content/BaGetter[.]Web/js/vulnerabilities[.]js[^\"]*\"[^>]*defer[^>]*>",
+            scriptMatch.Success ? scriptMatch.Value : "");
+        // NOTE: in the test host the asp-append-version provider resolves the
+        // _content manifest path without emitting a ?v= query; browser-level
+        // cache-busting proof stays with the parent's T3 browser checks.
+        // Aggregate counts still describe the full snapshot, not just headers.
+        Assert.Contains("<h4>120</h4>", content);
+        Assert.Contains("120 findings", content);
+
+        // The fragment must contain every version, in snapshot order.
+        using var details = await app.GetAsync("vulnerabilities?handler=PackageDetails&packageId=Pagination.ManyVersions");
+        Assert.Equal(HttpStatusCode.OK, details.StatusCode);
+        Assert.Equal("no-store", details.Headers.GetValues("Cache-Control").Single());
+        var detailsContent = await details.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(AdvisoryUrl, content); // main page stays summary-only
+        Assert.Contains(AdvisoryUrl, detailsContent);
+        Assert.Equal(120, Regex.Matches(detailsContent, "class=\"vulnerability-version\"").Count);
+        var shownVersions = Regex.Matches(detailsContent,
+                @"<div class=""vulnerability-version"">\s*<p>\s*<a[^>]*>\s*Pagination[.]ManyVersions (1[.]0[.]\d+)\s*</a>")
+            .Select(match => match.Groups[1].Value).ToArray();
+        Assert.Equal(expectedVersions, shownVersions);
+
+        Assert.Equal(snapshotBefore, await app.GetStringAsync("api/security"));
+        Assert.Equal(requestsAfterScan, app.Feed.RequestCount);
+    }
+
+    [Fact]
+    public async Task GetVulnerabilities_PackageDetailsFragment_ReturnsEscapedEvidence()
+    {
+        var handler = new FakeFeedHttpHandler();
+        handler.SetResponse(ServiceIndexUrl, ServiceIndexJson);
+        handler.SetResponse(VulnerabilityIndexUrl, VulnerabilityIndexJson);
+        // The declared dependency ID is rendered by the fragment; the nuspec
+        // stores it with standard XML entity escapes, so it decodes to "Evil&Dep".
+        handler.SetResponse(BasePageUrl, FeedPage("evil&dep", "[1.0.0, 2.0.0)", severity: 2));
+
+        using var app = new SecurityDashboardApplication(_output, handler, configureCredentials: false);
+        await app.AddPackageAsync(PackageStreamBuilder.Build(
+            "Private.Escaping", "9.9.9",
+            new PackageStreamBuilder.Dependency("Evil&amp;Dep", "[1.0.0]", "net9.0")));
+        await app.RunScanAsync();
+
+        using var response = await app.GetAsync(
+            "vulnerabilities?handler=PackageDetails&packageId=private.escaping"); // lowercase: case-insensitive match
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains(AdvisoryUrl, content);
+        Assert.Contains("[1.0.0, 2.0.0)", content); // feed-published affected range, verbatim
+        // Razor escaping: '&' must render as &amp;, never as raw markup.
+        Assert.Contains("Evil&amp;Dep", content);
+        Assert.DoesNotContain("Evil&Dep", content);
+    }
+
+    [Fact]
+    public async Task GetVulnerabilities_PackageDetailsFragment_RejectsBadIdsWithoutSideEffects()
+    {
+        using var app = CreateSuccessfulApp(_output, SuccessfulFeedHandler("testdata"));
+        await app.AddPackageAsync(TestResources.GetResourceStream(TestResources.Package));
+        await app.RunScanAsync();
+        var requestsAfterScan = app.Feed.RequestCount;
+        var snapshotBefore = await app.GetStringAsync("api/security");
+
+        // A missing or empty ID is a 400, never a full-page render.
+        using var missing = await app.GetAsync("vulnerabilities?handler=PackageDetails");
+        using var empty = await app.GetAsync("vulnerabilities?handler=PackageDetails&packageId=");
+        using var blank = await app.GetAsync("vulnerabilities?handler=PackageDetails&packageId=%20");
+        Assert.Equal(HttpStatusCode.BadRequest, missing.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, empty.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, blank.StatusCode);
+
+        // An unknown ID is an explicit 404, never a fabricated empty group.
+        using var unknown = await app.GetAsync(
+            "vulnerabilities?handler=PackageDetails&packageId=Not.Hosted");
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        Assert.True((await unknown.Content.ReadAsStringAsync()).Length > 0);
+
+        // Rejected fragments must never mutate the analysis or contact the feed.
         Assert.Equal(snapshotBefore, await app.GetStringAsync("api/security"));
         Assert.Equal(requestsAfterScan, app.Feed.RequestCount);
     }
@@ -152,6 +224,9 @@ public class SecurityDashboardIntegrationTests
         var first = await firstResponse.Content.ReadAsStringAsync();
         Assert.Equal(Enumerable.Range(1, 50).Select(PaginationPackageId), DisplayedPaginationPackages(first));
         Assert.Contains("page 1 of 2", first);
+        // Lazy behavior: the package list carries no per-version detail markup.
+        Assert.DoesNotContain("class=\"vulnerability-version\"", first);
+        Assert.DoesNotContain(AdvisoryUrl, first);
 
         var next = PaginationLink(first, "next");
         Assert.Contains("pageNumber=2", next);
@@ -252,10 +327,16 @@ public class SecurityDashboardIntegrationTests
 
         var content = await app.GetStringAsync("vulnerabilities");
 
-        Assert.Contains("Test", content); // hosted package id rendered
-        Assert.Contains("Critical", content);
-        Assert.Contains(AdvisoryUrl, content);
-        Assert.Contains("Confirmed", content); // exact stored version match is confirmed
+        Assert.Contains("TestData", content); // hosted package id rendered
+        Assert.Contains("Affected", content); // group worst state, summary level
+        // Deliberately lazy: findings render in the fragment, not the initial page.
+        Assert.DoesNotContain(AdvisoryUrl, content);
+        Assert.DoesNotContain("class=\"vulnerability-findings-table\"", content);
+        var fragment = await app.GetStringAsync(
+            "vulnerabilities?handler=PackageDetails&packageId=TestData");
+        Assert.Contains("Critical", fragment);
+        Assert.Contains(AdvisoryUrl, fragment);
+        Assert.Contains("Confirmed", fragment); // exact stored version match is confirmed
         // Counts must separate advisories (unique advisory links) from package counts.
         Assert.Contains("hosted package rows", content);
         Assert.Contains("unique advisories", content);
@@ -279,12 +360,18 @@ public class SecurityDashboardIntegrationTests
 
         var content = await app.GetStringAsync("vulnerabilities");
 
-        Assert.Contains("Vulnerable.Dep", content);
-        Assert.Contains("[9.0.0, )", content); // declared (unpinned) range rendered
-        Assert.Contains("[1.0.0, 10.0.0)", content); // advisory's affected range rendered
-        Assert.Contains("High", content);
-        Assert.Contains("Potential", content);
-        Assert.DoesNotContain("Confirmed", content);
+        Assert.Contains("Private.App", content); // summary group header
+        Assert.Contains("Potential exposure", content); // group worst state on the summary
+        // Deliberately lazy: the finding evidence renders in the fragment only.
+        Assert.DoesNotContain("[9.0.0, )", content);
+        var fragment = await app.GetStringAsync(
+            "vulnerabilities?handler=PackageDetails&packageId=Private.App");
+        Assert.Contains("Vulnerable.Dep", fragment);
+        Assert.Contains("[9.0.0, )", fragment); // declared (unpinned) range rendered
+        Assert.Contains("[1.0.0, 10.0.0)", fragment); // advisory's affected range rendered
+        Assert.Contains("High", fragment);
+        Assert.Contains("Potential", fragment);
+        Assert.DoesNotContain("Confirmed", fragment);
     }
 
     [Fact]
@@ -319,8 +406,12 @@ public class SecurityDashboardIntegrationTests
 
         Assert.Contains("stale", content, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("did not complete", content);
-        // The preserved, stale results remain visible.
-        Assert.Contains(AdvisoryUrl, content);
+        // The preserved, stale results stay reachable through the fragment;
+        // the initial page itself remains summary-only.
+        Assert.DoesNotContain(AdvisoryUrl, content);
+        var fragment = await app.GetStringAsync(
+            "vulnerabilities?handler=PackageDetails&packageId=TestData");
+        Assert.Contains(AdvisoryUrl, fragment);
         Assert.True(handler.RequestCount >= beforeRequests + 1, "the failed refresh must have attempted the feed");
     }
 
@@ -463,6 +554,9 @@ public class SecurityDashboardIntegrationTests
         await app.GetStringAsync("vulnerabilities");
         await app.GetStringAsync("packages/TestData");
         await app.GetAsync("api/security");
+        await app.GetAsync("vulnerabilities?handler=PackageDetails&packageId=TestData");
+        await app.GetAsync("vulnerabilities?handler=PackageDetails&packageId=Not.Hosted");
+        await app.GetAsync("vulnerabilities?handler=PackageDetails&packageId=");
 
         // A regular GET must not launch a network request; only the
         // background service and the explicit Rescan POST refresh.
@@ -514,9 +608,12 @@ public class SecurityDashboardIntegrationTests
 
         using var page = await app.GetAsync("vulnerabilities");
         using var api = await app.GetAsync("api/security");
+        using var fragment = await app.GetAsync(
+            "vulnerabilities?handler=PackageDetails&packageId=Any.Package");
 
         Assert.Equal(HttpStatusCode.Unauthorized, page.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, api.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, fragment.StatusCode);
         Assert.Equal("Basic realm=\"NuGet Server\"", api.Headers.WwwAuthenticate.ToString());
     }
 
@@ -529,9 +626,14 @@ public class SecurityDashboardIntegrationTests
 
         using var page = await app.GetAsync("vulnerabilities");
         using var api = await app.GetAsync("api/security");
+        using var fragment = await app.GetAsync(
+            "vulnerabilities?handler=PackageDetails&packageId=Any.Package");
 
         Assert.Equal(HttpStatusCode.OK, page.StatusCode);
         Assert.Equal(HttpStatusCode.OK, api.StatusCode);
+        // An unknown package ID still answers with an explicit 404 for
+        // authenticated users — never an empty 200 and never a 401 fallback.
+        Assert.Equal(HttpStatusCode.NotFound, fragment.StatusCode);
     }
 }
 

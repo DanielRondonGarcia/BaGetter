@@ -84,18 +84,69 @@ public class VulnerabilitiesModel : PageModel
         ExportVersion = exportVersion;
         ExportStatus = _historyStore?.GetStatus();
 
-        TotalPackageGroupCount = Snapshot.Packages
-            .Select(package => package.PackageId)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Count();
-        TotalPackagePages = (PackageRowCount + PackagePageSize - 1) / PackagePageSize;
-        PackagePageNumber = Math.Max(1, Math.Min(pageNumber, Math.Max(1, TotalPackagePages)));
-        PackageGroups = Snapshot.Packages
-            .Skip((PackagePageNumber - 1) * PackagePageSize)
-            .Take(PackagePageSize)
+        // The pagination unit is the case-insensitive package ID (T1), not the
+        // ID + version row: a package with many versions is ONE summary row on
+        // exactly one page, and its details load lazily when expanded instead
+        // of being embedded (or paginated away) per version.
+        var packageGroups = Snapshot.Packages
             .GroupBy(package => package.PackageId, StringComparer.OrdinalIgnoreCase)
             .Select(group => new PackageVulnerabilityGroup(group.Key, group.ToList()))
             .ToList();
+
+        // GroupBy preserves first-seen order, so scan ordering is unchanged.
+        TotalPackageGroupCount = packageGroups.Count;
+        TotalPackagePages = (TotalPackageGroupCount + PackagePageSize - 1) / PackagePageSize;
+        PackagePageNumber = Math.Max(1, Math.Min(pageNumber, Math.Max(1, TotalPackagePages)));
+        PackageGroups = packageGroups
+            .Skip((PackagePageNumber - 1) * PackagePageSize)
+            .Take(PackagePageSize)
+            .ToList();
+    }
+
+    /// <summary>
+    /// The lazy details fragment for one selected package (T1): an explicit
+    /// <c>GET ?handler=PackageDetails&amp;packageId=&lt;ID&gt;</c> on this same
+    /// Razor Page. It inherits the page's NuGet read authorization, renders the
+    /// server-escaped <c>_VulnerabilityPackageVersions</c> partial from the
+    /// immutable <c>Current</c> snapshot, and never mutates scan state, contacts
+    /// the feed or changes counters. Empty IDs are 400; unmatched IDs (matched
+    /// case-insensitively, never partially) are 404. The response is marked
+    /// no-store so a stale dashboard never serves cached fragments.
+    /// </summary>
+    public IActionResult OnGetPackageDetails(string packageId)
+    {
+        // Guard for direct unit tests without a host context.
+        var responseHeaders = Response?.Headers;
+        if (responseHeaders != null)
+        {
+            responseHeaders["Cache-Control"] = "no-store";
+        }
+
+        if (string.IsNullOrWhiteSpace(packageId))
+        {
+            return PlainText(
+                400,
+                "The package details request is invalid: a package ID is required.");
+        }
+
+        Snapshot = _scanner.Current;
+        var versions = Snapshot.Packages
+            .Where(package => string.Equals(
+                package.PackageId, packageId.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (versions.Count == 0)
+        {
+            return PlainText(
+                404,
+                "No hosted package matches the requested ID. Package IDs are matched " +
+                "case-insensitively and exactly (not partially); the package may not " +
+                "be hosted here.");
+        }
+
+        // The fragment carries the stored, case-preserved ID so package-page
+        // links stay canonical even when the request used another casing.
+        return Partial("_VulnerabilityPackageVersions",
+            new PackageVulnerabilityGroup(versions[0].PackageId, versions));
     }
 
     /// <summary>
@@ -324,11 +375,15 @@ public class VulnerabilitiesModel : PageModel
     /// <summary>The number of hosted-package pages (zero when there are no packages).</summary>
     public int TotalPackagePages { get; private set; }
 
-    public int FirstPackageNumber => PackageRowCount == 0
+    /// <summary>
+    /// The first (one-based) package ID on the current page; packages, not
+    /// version rows, are the pagination unit.
+    /// </summary>
+    public int FirstPackageNumber => TotalPackageGroupCount == 0
         ? 0
         : ((PackagePageNumber - 1) * PackagePageSize) + 1;
 
-    public int LastPackageNumber => Math.Min(PackagePageNumber * PackagePageSize, PackageRowCount);
+    public int LastPackageNumber => Math.Min(PackagePageNumber * PackagePageSize, TotalPackageGroupCount);
 
     public bool HasPreviousPackagePage => PackagePageNumber > 1;
 

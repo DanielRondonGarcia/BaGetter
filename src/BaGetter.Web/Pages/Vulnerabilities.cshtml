@@ -212,20 +212,24 @@
 
     <h3>Hosted packages</h3>
     <p class="text-muted">
-        Each section lists a hosted package (by ID) and its scanned versions on this page.
-        At most @VulnerabilitiesModel.PackagePageSize package versions are loaded per page;
-        packages with more versions continue on subsequent pages.
-        "Affected" means a stored exact version (or a pinned declared dependency)
-        matches a known advisory; "Potential exposure" means a declared dependency
-        range overlaps an advisory range and the installed version is not resolved.
+        Each section lists one hosted package (by ID, matched case-insensitively) —
+        one package per section, regardless of how many stored versions it has.
+        At most @VulnerabilitiesModel.PackagePageSize packages load per page;
+        additional packages continue on subsequent pages. A package's scanned
+        versions load lazily when you expand its section (with a loading
+        skeleton while the request completes), so opening this page never
+        downloads every package's full version history. "Affected" means a
+        stored exact version (or a pinned declared dependency) matches a known
+        advisory; "Potential exposure" means a declared dependency range
+        overlaps an advisory range and the installed version is not resolved.
         No known advisory is <strong>not covered</strong>, not "safe": packages that
         are private or simply unlisted cannot appear in the public advisory feed.
     </p>
     @if (Model.TotalPackageGroupCount > 0)
     {
         <p class="text-muted" aria-live="polite">
-            Showing hosted package versions @Model.FirstPackageNumber&ndash;@Model.LastPackageNumber
-            of @Model.PackageRowCount (page @Model.PackagePageNumber of @Model.TotalPackagePages).
+            Showing hosted packages @Model.FirstPackageNumber&ndash;@Model.LastPackageNumber
+            of @Model.TotalPackageGroupCount (page @Model.PackagePageNumber of @Model.TotalPackagePages).
         </p>
     }
 
@@ -236,25 +240,18 @@
 
     @foreach (var group in Model.PackageGroups)
     {
-        <details class="vulnerability-package">
+        <details class="vulnerability-package" data-package-id="@group.PackageId" aria-busy="false">
             <summary>
                 <strong>@group.PackageId</strong>
                 <span class="label @VulnerabilitiesModel.StateBadgeClass(group.WorstState)">@VulnerabilitiesModel.StateLabel(group.WorstState)</span>
-                <span class="text-muted">(@group.Versions.Count version@(group.Versions.Count == 1 ? "" : "s") on this page)</span>
+                <span class="text-muted">(@group.Versions.Count version@(group.Versions.Count == 1 ? "" : "s"), loaded when expanded)</span>
             </summary>
-            @foreach (var version in group.Versions)
-            {
-                <div class="vulnerability-version">
-                    <p>
-                        <a asp-page="/Package" asp-route-id="@group.PackageId" asp-route-version="@version.PackageVersion">
-                            @group.PackageId @version.PackageVersion
-                        </a>
-                        <span class="label @VulnerabilitiesModel.StateBadgeClass(version.State)">@VulnerabilitiesModel.StateLabel(version.State)</span>
-                    </p>
-                    <p class="text-muted">@version.Note</p>
-                    <partial name="Shared/_VulnerabilityFindings" for="@version.Findings" />
-                </div>
-            }
+            @* Deliberately lazy: only a server-rendered placeholder lives here;
+               the package's versions and findings are requested on expansion
+               and never embedded in (or hidden inside) the initial page. *@
+            <div class="vulnerability-package-details" data-package-details>
+                <p class="text-muted">Expanding this package loads its scanned versions.</p>
+            </div>
         </details>
     }
 
@@ -297,3 +294,7 @@
     }
 }
 </div>
+
+@section Scripts {
+    <script src="~/_content/BaGetter.Web/js/vulnerabilities.js" defer asp-append-version="true"></script>
+}
