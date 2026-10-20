@@ -219,6 +219,13 @@
         No known advisory is <strong>not covered</strong>, not "safe": packages that
         are private or simply unlisted cannot appear in the public advisory feed.
     </p>
+    @if (Model.TotalPackageGroupCount > 0)
+    {
+        <p class="text-muted" aria-live="polite">
+            Showing hosted package IDs @Model.FirstPackageNumber&ndash;@Model.LastPackageNumber
+            of @Model.TotalPackageGroupCount (page @Model.PackagePageNumber of @Model.TotalPackagePages).
+        </p>
+    }
 
     @if (!Model.PackageGroups.Any())
     {
@@ -247,6 +254,44 @@
                 </div>
             }
         </details>
+    }
+
+    @if (Model.TotalPackagePages > 1)
+    {
+        <nav aria-label="Hosted package pagination">
+            <ul class="pager">
+                <li class="previous">
+                    @if (Model.HasPreviousPackagePage)
+                    {
+                        <a asp-page="/Vulnerabilities"
+                           asp-route-page="@(Model.PackagePageNumber - 1)"
+                           asp-route-exportPackageId="@Model.ExportPackageId"
+                           asp-route-exportVersion="@Model.ExportVersion">
+                            <span aria-hidden="true">&larr;</span> Previous
+                        </a>
+                    }
+                    else
+                    {
+                        <span aria-disabled="true">Previous</span>
+                    }
+                </li>
+                <li class="next">
+                    @if (Model.HasNextPackagePage)
+                    {
+                        <a asp-page="/Vulnerabilities"
+                           asp-route-page="@(Model.PackagePageNumber + 1)"
+                           asp-route-exportPackageId="@Model.ExportPackageId"
+                           asp-route-exportVersion="@Model.ExportVersion">
+                            Next <span aria-hidden="true">&rarr;</span>
+                        </a>
+                    }
+                    else
+                    {
+                        <span aria-disabled="true">Next</span>
+                    }
+                </li>
+            </ul>
+        </nav>
     }
 }
 </div>

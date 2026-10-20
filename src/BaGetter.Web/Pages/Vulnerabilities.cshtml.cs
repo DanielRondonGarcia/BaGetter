@@ -28,6 +28,8 @@ namespace BaGetter.Web;
 [Authorize(AuthenticationSchemes = AuthenticationConstants.NugetBasicAuthenticationScheme, Policy = AuthenticationConstants.NugetUserPolicy)]
 public class VulnerabilitiesModel : PageModel
 {
+    public const int PackagePageSize = 50;
+
     private readonly HostedVulnerabilityService _scanner;
     private readonly VulnerabilityHistoryStore _historyStore;
     private readonly VulnerabilityCsvExporter _csvExporter;
@@ -73,13 +75,26 @@ public class VulnerabilitiesModel : PageModel
     public string ExportTodayUtc =>
         DateTime.UtcNow.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-    public void OnGet(string exportPackageId = null, string exportVersion = null)
+    public void OnGet(string exportPackageId = null, string exportVersion = null, int page = 1)
     {
         Snapshot = _scanner.Current;
         EffectiveStatus = _scanner.Status;
         ExportPackageId = exportPackageId;
         ExportVersion = exportVersion;
         ExportStatus = _historyStore?.GetStatus();
+
+        var packageGroups = Snapshot.Packages
+            .GroupBy(package => package.PackageId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new PackageVulnerabilityGroup(group.Key, group.ToList()))
+            .ToList();
+
+        TotalPackageGroupCount = packageGroups.Count;
+        TotalPackagePages = (TotalPackageGroupCount + PackagePageSize - 1) / PackagePageSize;
+        PackagePageNumber = Math.Max(1, Math.Min(page, Math.Max(1, TotalPackagePages)));
+        PackageGroups = packageGroups
+            .Skip((PackagePageNumber - 1) * PackagePageSize)
+            .Take(PackagePageSize)
+            .ToList();
     }
 
     /// <summary>
@@ -299,14 +314,28 @@ public class VulnerabilitiesModel : PageModel
         })
         .ToList();
 
-    /// <summary>
-    /// The snapshot rows grouped by hosted package ID (case-insensitive),
-    /// keeping the scanner's ordering (affected rows first).
-    /// </summary>
-    public IReadOnlyList<PackageVulnerabilityGroup> PackageGroups => Snapshot.Packages
-        .GroupBy(package => package.PackageId, StringComparer.OrdinalIgnoreCase)
-        .Select(group => new PackageVulnerabilityGroup(group.Key, group.ToList()))
-        .ToList();
+    /// <summary>The current one-based hosted-package page.</summary>
+    public int PackagePageNumber { get; private set; } = 1;
+
+    /// <summary>The number of distinct hosted package IDs in the full snapshot.</summary>
+    public int TotalPackageGroupCount { get; private set; }
+
+    /// <summary>The number of hosted-package pages (zero when there are no packages).</summary>
+    public int TotalPackagePages { get; private set; }
+
+    public int FirstPackageNumber => TotalPackageGroupCount == 0
+        ? 0
+        : ((PackagePageNumber - 1) * PackagePageSize) + 1;
+
+    public int LastPackageNumber => Math.Min(PackagePageNumber * PackagePageSize, TotalPackageGroupCount);
+
+    public bool HasPreviousPackagePage => PackagePageNumber > 1;
+
+    public bool HasNextPackagePage => PackagePageNumber < TotalPackagePages;
+
+    /// <summary>The groups rendered on the current page, in scan ordering.</summary>
+    public IReadOnlyList<PackageVulnerabilityGroup> PackageGroups { get; private set; } =
+        Array.Empty<PackageVulnerabilityGroup>();
 
     public static string StateLabel(HostedPackageVulnerabilityState state)
     {
