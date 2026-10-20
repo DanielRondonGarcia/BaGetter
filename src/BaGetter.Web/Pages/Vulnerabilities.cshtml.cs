@@ -28,6 +28,7 @@ namespace BaGetter.Web;
 [Authorize(AuthenticationSchemes = AuthenticationConstants.NugetBasicAuthenticationScheme, Policy = AuthenticationConstants.NugetUserPolicy)]
 public class VulnerabilitiesModel : PageModel
 {
+    /// <summary>Maximum ID + version rows rendered, not distinct package IDs.</summary>
     public const int PackagePageSize = 50;
 
     private readonly HostedVulnerabilityService _scanner;
@@ -83,17 +84,17 @@ public class VulnerabilitiesModel : PageModel
         ExportVersion = exportVersion;
         ExportStatus = _historyStore?.GetStatus();
 
-        var packageGroups = Snapshot.Packages
-            .GroupBy(package => package.PackageId, StringComparer.OrdinalIgnoreCase)
-            .Select(group => new PackageVulnerabilityGroup(group.Key, group.ToList()))
-            .ToList();
-
-        TotalPackageGroupCount = packageGroups.Count;
-        TotalPackagePages = (TotalPackageGroupCount + PackagePageSize - 1) / PackagePageSize;
+        TotalPackageGroupCount = Snapshot.Packages
+            .Select(package => package.PackageId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+        TotalPackagePages = (PackageRowCount + PackagePageSize - 1) / PackagePageSize;
         PackagePageNumber = Math.Max(1, Math.Min(pageNumber, Math.Max(1, TotalPackagePages)));
-        PackageGroups = packageGroups
+        PackageGroups = Snapshot.Packages
             .Skip((PackagePageNumber - 1) * PackagePageSize)
             .Take(PackagePageSize)
+            .GroupBy(package => package.PackageId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new PackageVulnerabilityGroup(group.Key, group.ToList()))
             .ToList();
     }
 
@@ -323,17 +324,17 @@ public class VulnerabilitiesModel : PageModel
     /// <summary>The number of hosted-package pages (zero when there are no packages).</summary>
     public int TotalPackagePages { get; private set; }
 
-    public int FirstPackageNumber => TotalPackageGroupCount == 0
+    public int FirstPackageNumber => PackageRowCount == 0
         ? 0
         : ((PackagePageNumber - 1) * PackagePageSize) + 1;
 
-    public int LastPackageNumber => Math.Min(PackagePageNumber * PackagePageSize, TotalPackageGroupCount);
+    public int LastPackageNumber => Math.Min(PackagePageNumber * PackagePageSize, PackageRowCount);
 
     public bool HasPreviousPackagePage => PackagePageNumber > 1;
 
     public bool HasNextPackagePage => PackagePageNumber < TotalPackagePages;
 
-    /// <summary>The groups rendered on the current page, in scan ordering.</summary>
+    /// <summary>Only this page's version rows, grouped by ID in scan ordering.</summary>
     public IReadOnlyList<PackageVulnerabilityGroup> PackageGroups { get; private set; } =
         Array.Empty<PackageVulnerabilityGroup>();
 

@@ -82,6 +82,63 @@ public class SecurityDashboardIntegrationTests
     }
 
     [Fact]
+    public async Task GetVulnerabilities_PaginationRows_BoundsManyVersionsOfOnePackage()
+    {
+        var handler = SuccessfulFeedHandler();
+        handler.SetResponse(BasePageUrl, FeedPage("Pagination.ManyVersions", "[1.0.0, 2.0.0)", severity: 2));
+        using var app = CreateSuccessfulApp(_output, handler);
+        for (var index = 0; index < 120; index++)
+        {
+            await app.AddPackageAsync(PackageStreamBuilder.Build("Pagination.ManyVersions", "1.0." + index));
+        }
+        await app.RunScanAsync();
+        var requestsAfterScan = app.Feed.RequestCount;
+        var snapshotBefore = await app.GetStringAsync("api/security");
+        using var snapshot = JsonDocument.Parse(snapshotBefore);
+        var expectedVersions = snapshot.RootElement.GetProperty("packages").EnumerateArray()
+            .Select(package => package.GetProperty("packageVersion").GetString()).ToArray();
+        Assert.Equal(120, snapshot.RootElement.GetProperty("packageRowCount").GetInt32());
+        Assert.Equal(120, snapshot.RootElement.GetProperty("findingCount").GetInt32());
+        var allVersions = new List<string>();
+        var url = "vulnerabilities";
+
+        for (var pageNumber = 1; pageNumber <= 3; pageNumber++)
+        {
+            using var response = await app.GetAsync(url);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var content = await response.Content.ReadAsStringAsync();
+            var versions = Regex.Matches(content,
+                    @"<div class=""vulnerability-version"">\s*<p>\s*<a[^>]*>\s*Pagination\.ManyVersions (1\.0\.\d+)\s*</a>")
+                .Select(match => match.Groups[1].Value).ToArray();
+            var expectedCount = pageNumber == 3 ? 20 : 50;
+            Assert.Equal(expectedCount, Regex.Matches(content, "class=\"vulnerability-version\"").Count);
+            Assert.Equal(expectedVersions.Skip((pageNumber - 1) * 50).Take(50), versions);
+            Assert.Contains("page " + pageNumber + " of 3", content);
+            Assert.Contains("<h4>120</h4>", content);
+            Assert.Contains("120 findings", content);
+            Assert.Contains("versions on this page", content);
+            allVersions.AddRange(versions);
+            if (pageNumber < 3)
+            {
+                url = PaginationLink(content, "next");
+                Assert.Contains("pageNumber=" + (pageNumber + 1), url);
+            }
+            else
+            {
+                Assert.DoesNotContain("pageNumber=4", content);
+                using var previous = await app.GetAsync(PaginationLink(content, "previous"));
+                Assert.Equal(HttpStatusCode.OK, previous.StatusCode);
+                Assert.Contains("page 2 of 3", await previous.Content.ReadAsStringAsync());
+            }
+        }
+
+        Assert.Equal(expectedVersions, allVersions);
+        Assert.Equal(120, allVersions.Distinct().Count());
+        Assert.Equal(snapshotBefore, await app.GetStringAsync("api/security"));
+        Assert.Equal(requestsAfterScan, app.Feed.RequestCount);
+    }
+
+    [Fact]
     public async Task GetVulnerabilities_PaginationLinks_RoundTripAndPreserveExportFilters()
     {
         using var app = CreateSuccessfulApp(_output);
